@@ -13,6 +13,7 @@ type Project = {
   id: string;
   name: string;
   location: string;
+  status: string;
 };
 
 type ShiftAssignment = {
@@ -50,7 +51,7 @@ export default function AssignmentsPage() {
     const fetchData = async () => {
       const [w, p] = await Promise.all([
         supabase.from('workers').select('employee_id, name, role').eq('active', true).order('name'),
-        supabase.from('projects').select('id, name, location').eq('status', 'active'),
+        supabase.from('projects').select('id, name, location, status').order('name'),
       ]);
       if (w.data) setWorkers(w.data);
       if (p.data) setProjects(p.data);
@@ -138,15 +139,113 @@ export default function AssignmentsPage() {
 
     for (const [workerId, a] of Object.entries(assignments)) {
       if (a.mode === 'full_day') {
-        // Save full day, delete morning/afternoon if they exist
         await upsertShift(workerId, 'full_day', a.full_day.project_id, a.full_day.assignment_id);
         await deleteShift(a.morning.assignment_id);
         await deleteShift(a.afternoon.assignment_id);
       } else {
-        // Save morning and afternoon, delete full_day if it exists
         await upsertShift(workerId, 'morning', a.morning.project_id, a.morning.assignment_id);
         await upsertShift(workerId, 'afternoon', a.afternoon.project_id, a.afternoon.assignment_id);
         await deleteShift(a.full_day.assignment_id);
+      }
+    }
+
+    // Auto-create timesheet stubs for all saved assignments.
+    // ignoreDuplicates: true ensures we never overwrite manual supervisor edits.
+    const timesheetInserts: {
+      worker_id: string;
+      project_id: string;
+      date: string;
+      regular_hours: number;
+      ot_15_hours: number;
+      ot_20_hours: number;
+      source: string;
+    }[] = [];
+
+    for (const [workerId, a] of Object.entries(assignments)) {
+      if (a.mode === 'full_day' && a.full_day.project_id) {
+        timesheetInserts.push({
+          worker_id: workerId,
+          project_id: a.full_day.project_id,
+          date,
+          regular_hours: 8,
+          ot_15_hours: 0,
+          ot_20_hours: 0,
+          source: 'assignment',
+        });
+      } else if (a.mode === 'split') {
+        if (a.morning.project_id) {
+          timesheetInserts.push({
+            worker_id: workerId,
+            project_id: a.morning.project_id,
+            date,
+            regular_hours: 4,
+            ot_15_hours: 0,
+            ot_20_hours: 0,
+            source: 'assignment',
+          });
+        }
+        if (a.afternoon.project_id) {
+          timesheetInserts.push({
+            worker_id: workerId,
+            project_id: a.afternoon.project_id,
+            date,
+            regular_hours: 4,
+            ot_15_hours: 0,
+            ot_20_hours: 0,
+            source: 'assignment',
+          });
+        }
+      }
+    }
+
+    // Build a map of which projects each worker is now assigned to on this date.
+    const currentProjectsByWorker: Record<string, Set<string>> = {};
+    for (const insert of timesheetInserts) {
+      if (!currentProjectsByWorker[insert.worker_id]) {
+        currentProjectsByWorker[insert.worker_id] = new Set();
+      }
+      currentProjectsByWorker[insert.worker_id].add(insert.project_id);
+    }
+
+    const workerIds = Object.keys(currentProjectsByWorker);
+    if (workerIds.length > 0) {
+      const { data: existing } = await supabase
+        .from('timesheets')
+        .select('id, worker_id, project_id, regular_hours, source')
+        .eq('date', date)
+        .in('worker_id', workerIds);
+
+      const existingRows = existing || [];
+      const existingMap = new Map(existingRows.map(t => [`${t.worker_id}__${t.project_id}`, t]));
+
+      // Delete timesheets for projects the worker is no longer assigned to (any source).
+      // If an assignment changes, the old project entry is stale — supervisor re-enters OT on the new entry.
+      const toDelete = existingRows
+        .filter(t => !currentProjectsByWorker[t.worker_id]?.has(t.project_id))
+        .map(t => t.id);
+
+      if (toDelete.length > 0) {
+        await supabase.from('timesheets').delete().in('id', toDelete);
+      }
+
+      const toInsert = [];
+      const toUpdate: { id: string; regular_hours: number }[] = [];
+
+      for (const t of timesheetInserts) {
+        const row = existingMap.get(`${t.worker_id}__${t.project_id}`);
+        if (!row) {
+          toInsert.push(t);
+        } else if (row.regular_hours !== t.regular_hours) {
+          // Shift type changed (full-day ↔ split) — update regular_hours. OT fields are untouched.
+          toUpdate.push({ id: row.id, regular_hours: t.regular_hours });
+        }
+      }
+
+      if (toInsert.length > 0) {
+        await supabase.from('timesheets').insert(toInsert);
+      }
+      for (const u of toUpdate) {
+        await supabase.from('timesheets').update({ regular_hours: u.regular_hours }).eq('id', u.id);
       }
     }
 
@@ -218,7 +317,9 @@ export default function AssignmentsPage() {
                       >
                         <option value="">— Not assigned —</option>
                         {projects.map(p => (
-                          <option key={p.id} value={p.id}>{p.name} — {p.location}</option>
+                          <option key={p.id} value={p.id} disabled={p.status !== 'active'}>
+                            {p.name} — {p.location}{p.status !== 'active' ? ` (${p.status})` : ''}
+                          </option>
                         ))}
                       </select>
                     ) : (

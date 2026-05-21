@@ -10,6 +10,7 @@ type ProjectCost = {
   status: string;
   totalCost: number;
   workerCount: number;
+  mandays: number;
 };
 
 const getWorkingDays = (year: number, month: number): number => {
@@ -57,20 +58,22 @@ const { data: projects } = await projectQuery;
 
       if (!projects) return;
 
-      // Fetch timesheets
+      // Fetch timesheets and assignments for the same period
       let timesheetQuery = supabase
         .from('timesheets')
         .select('project_id, worker_id, regular_hours, ot_15_hours, ot_20_hours, date');
+      let assignmentQuery = supabase
+        .from('assignments')
+        .select('project_id, shift');
 
       if (view === 'month') {
         const startDate = `${selectedMonth}-01`;
         const endDate = new Date(year, month, 0).toISOString().split('T')[0];
-        timesheetQuery = timesheetQuery
-          .gte('date', startDate)
-          .lte('date', endDate);
+        timesheetQuery = timesheetQuery.gte('date', startDate).lte('date', endDate);
+        assignmentQuery = assignmentQuery.gte('assigned_date', startDate).lte('assigned_date', endDate);
       }
 
-      const { data: timesheets } = await timesheetQuery;
+      const [{ data: timesheets }, { data: assignments }] = await Promise.all([timesheetQuery, assignmentQuery]);
 
       // Fetch worker monthly rates
       const { data: workers } = await supabase
@@ -82,6 +85,12 @@ const { data: projects } = await projectQuery;
       const workerRateMap: Record<string, number> = {};
       workers.forEach(w => {
         workerRateMap[w.employee_id] = w.monthly_rate;
+      });
+
+      // Mandays from assignments: full_day = 1, morning/afternoon = 0.5
+      const mandayMap: Record<string, number> = {};
+      (assignments || []).forEach(a => {
+        mandayMap[a.project_id] = (mandayMap[a.project_id] || 0) + (a.shift === 'full_day' ? 1 : 0.5);
       });
 
       // Calculate cost per project
@@ -99,7 +108,8 @@ const { data: projects } = await projectQuery;
         const dailyRate = monthlyRate / entryWorkingDays;
         const hourlyRate = dailyRate / 8;
 
-        const regularCost = (t.regular_hours / 8) * dailyRate;
+        // Full-day rows (regular_hours > 4) always cost at the full daily rate
+        const regularCost = t.regular_hours > 4 ? dailyRate : (t.regular_hours / 8) * dailyRate;
         const ot15Cost = t.ot_15_hours * hourlyRate * 1.5;
         const ot20Cost = t.ot_20_hours * hourlyRate * 2;
         const totalCost = regularCost + ot15Cost + ot20Cost;
@@ -118,6 +128,7 @@ const { data: projects } = await projectQuery;
         status: p.status,
         totalCost: costMap[p.id]?.total || 0,
         workerCount: costMap[p.id]?.workers.size || 0,
+        mandays: mandayMap[p.id] || 0,
       }));
 
       result.sort((a, b) => b.totalCost - a.totalCost);
@@ -202,13 +213,14 @@ const { data: projects } = await projectQuery;
                 <th className="text-left px-4 py-3 font-medium">Location</th>
                 <th className="text-left px-4 py-3 font-medium">Status</th>
                 <th className="text-right px-4 py-3 font-medium">Workers</th>
+                <th className="text-right px-4 py-3 font-medium">Mandays</th>
                 <th className="text-right px-4 py-3 font-medium">Total Cost (SGD)</th>
               </tr>
             </thead>
             <tbody>
               {projectCosts.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="text-center px-4 py-6 text-gray-400">
+                  <td colSpan={6} className="text-center px-4 py-6 text-gray-400">
                     No timesheet data found for this period
                   </td>
                 </tr>
@@ -221,6 +233,9 @@ const { data: projects } = await projectQuery;
                     <span className={statusBadge(p.status)}>{p.status}</span>
                   </td>
                   <td className="px-4 py-3 text-right text-gray-600">{p.workerCount}</td>
+                  <td className="px-4 py-3 text-right text-gray-600">
+                    {p.mandays === 0 ? <span className="text-gray-300">—</span> : p.mandays.toLocaleString()}
+                  </td>
                   <td className="px-4 py-3 text-right font-semibold">
                     {p.totalCost === 0
                       ? <span className="text-gray-300">—</span>
@@ -233,7 +248,7 @@ const { data: projects } = await projectQuery;
             {projectCosts.length > 0 && (
               <tfoot className="bg-gray-50 border-t">
                 <tr>
-                  <td colSpan={4} className="px-4 py-3 font-semibold">Total</td>
+                  <td colSpan={5} className="px-4 py-3 font-semibold">Total</td>
                   <td className="px-4 py-3 text-right font-bold">
                     ${totalAllProjects.toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>

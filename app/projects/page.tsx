@@ -22,17 +22,25 @@ const emptyForm = {
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [mandayMap, setMandayMap] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
 
   const fetchProjects = async () => {
-    const { data } = await supabase
-      .from('projects')
-      .select('*')
-      .order('created_at', { ascending: false });
-    if (data) setProjects(data);
+    const [{ data: projects }, { data: assignments }] = await Promise.all([
+      supabase.from('projects').select('*').order('created_at', { ascending: false }),
+      supabase.from('assignments').select('project_id, shift'),
+    ]);
+    if (projects) setProjects(projects);
+    if (assignments) {
+      const map: Record<string, number> = {};
+      assignments.forEach(a => {
+        map[a.project_id] = (map[a.project_id] || 0) + (a.shift === 'full_day' ? 1 : 0.5);
+      });
+      setMandayMap(map);
+    }
   };
 
   useEffect(() => {
@@ -163,13 +171,14 @@ export default function ProjectsPage() {
               <th className="text-left px-4 py-3 font-medium">Start Date</th>
               <th className="text-left px-4 py-3 font-medium">End Date</th>
               <th className="text-left px-4 py-3 font-medium">Status</th>
+              <th className="text-right px-4 py-3 font-medium">Mandays</th>
               <th className="text-left px-4 py-3 font-medium"></th>
             </tr>
           </thead>
           <tbody>
             {projects.length === 0 && (
               <tr>
-                <td colSpan={6} className="text-center px-4 py-6 text-gray-400">No projects yet</td>
+                <td colSpan={7} className="text-center px-4 py-6 text-gray-400">No projects yet</td>
               </tr>
             )}
             {projects.map(p => (
@@ -180,6 +189,9 @@ export default function ProjectsPage() {
                 <td className="px-4 py-3 text-gray-600">{p.end_date || '—'}</td>
                 <td className="px-4 py-3">
                   <span className={statusBadge(p.status)}>{p.status}</span>
+                </td>
+                <td className="px-4 py-3 text-right text-gray-600">
+                  {mandayMap[p.id] ? mandayMap[p.id].toLocaleString() : '—'}
                 </td>
                 <td className="px-4 py-3">
                   <button
