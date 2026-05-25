@@ -55,6 +55,7 @@ export default function BinsPage() {
   const [editingBin, setEditingBin] = useState<Bin | null>(null);
   const [form, setForm] = useState<BinForm>(emptyForm);
   const [loading, setLoading] = useState(false);
+  const [locationFilter, setLocationFilter] = useState<'all' | 'customer' | 'yard' | 'unknown'>('all');
 
   const fetchBins = async () => {
     const { data } = await supabase
@@ -120,6 +121,13 @@ export default function BinsPage() {
     else alert('Error deleting bin: ' + error.message);
   };
 
+  const filteredBins = bins.filter(bin => {
+    if (locationFilter === 'customer') return !!bin.customer_id;
+    if (locationFilter === 'yard') return !!bin.location_id;
+    if (locationFilter === 'unknown') return !bin.customer_id && !bin.location_id;
+    return true;
+  });
+
   const currentLocation = (bin: Bin) => {
     if (bin.customers) return { label: 'At customer', value: bin.customers.name, color: 'text-blue-700 bg-blue-50' };
     if (bin.locations) return { label: 'At yard', value: bin.locations.name, color: 'text-green-700 bg-green-50' };
@@ -128,11 +136,23 @@ export default function BinsPage() {
 
   return (
     <main className="max-w-4xl mx-auto p-8 bg-white text-gray-900 min-h-screen">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold">Bins</h1>
         <button onClick={openCreate} className="bg-blue-600 text-white px-4 py-2 rounded font-medium hover:bg-blue-700">
           + New Bin
         </button>
+      </div>
+
+      <div className="flex border rounded overflow-hidden w-fit mb-6">
+        {([['all', 'All'], ['customer', 'At Customer'], ['yard', 'At Yard'], ['unknown', 'Unknown']] as const).map(([val, label]) => (
+          <button
+            key={val}
+            onClick={() => setLocationFilter(val)}
+            className={`px-4 py-2 text-sm font-medium ${locationFilter === val ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       <div className="bg-white border rounded-lg overflow-hidden">
@@ -145,12 +165,14 @@ export default function BinsPage() {
             </tr>
           </thead>
           <tbody>
-            {bins.length === 0 && (
+            {filteredBins.length === 0 && (
               <tr>
-                <td colSpan={3} className="text-center px-4 py-6 text-gray-400">No bins registered</td>
+                <td colSpan={3} className="text-center px-4 py-6 text-gray-400">
+                  {bins.length === 0 ? 'No bins registered' : 'No bins match this filter'}
+                </td>
               </tr>
             )}
-            {bins.map(bin => {
+            {filteredBins.map(bin => {
               const loc = currentLocation(bin);
               return (
                 <tr key={bin.id} className="border-b last:border-0 hover:bg-gray-50">
@@ -162,8 +184,12 @@ export default function BinsPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
-                    <button onClick={() => openEdit(bin)} className="text-blue-600 hover:underline text-sm mr-3">Edit</button>
-                    <button onClick={() => handleDelete(bin.id, bin.serial_number)} className="text-red-600 hover:underline text-sm">Delete</button>
+                    <button onClick={() => openEdit(bin)} title="Edit" className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    </button>
+                    <button onClick={() => handleDelete(bin.id, bin.serial_number)} title="Delete" className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                    </button>
                   </td>
                 </tr>
               );

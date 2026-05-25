@@ -13,7 +13,7 @@ type Trip = {
   remarks: string | null;
   status: string;
   created_at: string;
-  customers: { name: string; address: string | null } | null;
+  customers: { name: string; address: string | null; contact_person: string | null; contact_number: string | null } | null;
   locations: { name: string; address: string | null } | null;
   weigh_bridge: { net_weight: number }[];
   trip_bins: { id: string; bin_id: string; action: string; bins: { serial_number: string } | null }[];
@@ -23,7 +23,7 @@ type Vehicle = { plate_number: string };
 type Driver = { employee_id: string; name: string };
 type CustomerOption = { customer_id: number; name: string; address: string | null };
 type LocationOption = { id: number; name: string; address: string | null };
-type BinOption = { id: string; serial_number: string };
+type BinOption = { id: string; serial_number: string; customer_id: number | null; location_id: number | null };
 type BinAction = { bin_id: string; action: 'dropoff' | 'pickup' };
 
 const emptyForm = {
@@ -51,6 +51,9 @@ export default function TripsPage() {
   const [loading, setLoading] = useState(false);
   const [binActions, setBinActions] = useState<BinAction[]>([]);
 
+  const [previewTrip, setPreviewTrip] = useState<Trip | null>(null);
+  const [copied, setCopied] = useState(false);
+
   const [showNewCustomer, setShowNewCustomer] = useState(false);
   const [newCustomerForm, setNewCustomerForm] = useState(emptyCustomerForm);
   const [savingCustomer, setSavingCustomer] = useState(false);
@@ -58,7 +61,7 @@ export default function TripsPage() {
   const fetchTrips = async () => {
     const { data } = await supabase
       .from('trips')
-      .select('id, vehicle_number, driver_id, customer_id, dropoff_id, requester, remarks, status, created_at, customers(name, address), locations(name, address), weigh_bridge(net_weight), trip_bins(id, bin_id, action, bins(serial_number))')
+      .select('id, vehicle_number, driver_id, customer_id, dropoff_id, requester, remarks, status, created_at, customers(name, address, contact_person, contact_number), locations(name, address), weigh_bridge(net_weight), trip_bins(id, bin_id, action, bins(serial_number))')
       .order('created_at', { ascending: false });
     if (data) setTrips(data as unknown as Trip[]);
   };
@@ -69,7 +72,7 @@ export default function TripsPage() {
       supabase.from('drivers').select('employee_id, name').order('name'),
       supabase.from('customers').select('customer_id, name, address').order('name'),
       supabase.from('locations').select('id, name, address').order('name'),
-      supabase.from('bins').select('id, serial_number').order('serial_number'),
+      supabase.from('bins').select('id, serial_number, customer_id, location_id').order('serial_number'),
     ]);
     if (v.data) setVehicles(v.data);
     if (d.data) setDrivers(d.data);
@@ -234,6 +237,41 @@ export default function TripsPage() {
   const formatDate = (iso: string) =>
     new Date(iso).toLocaleDateString('en-SG', { day: '2-digit', month: 'short', year: 'numeric' });
 
+  const generateMessage = (t: Trip) => {
+    const date = new Date(t.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const lines = [
+      `Date : ${date}`,
+      ``,
+      `Order placed by - ${t.requester ?? ''}`,
+      ``,
+      `Collect from - ${t.customers?.name ?? ''}`,
+      `Collection address - ${t.customers?.address ?? ''}`,
+      `Person in charge - ${t.customers?.contact_person ?? ''}`,
+      `Contact no. - ${t.customers?.contact_number ?? ''}`,
+      ``,
+      `Sent to - ${t.locations?.name ?? ''}`,
+      `Address - ${t.locations?.address ?? ''}`,
+      `Person in charge - `,
+      `Contact no. - `,
+      ``,
+      `Remarks: ${t.remarks ?? ''}`,
+    ];
+
+    t.trip_bins.forEach(tb => {
+      const label = tb.action === 'dropoff' ? 'Bin drop off' : 'Bin pick up';
+      lines.push(`${label} - ${tb.bins?.serial_number ?? ''}`);
+    });
+
+    return lines.join('\n');
+  };
+
+  const handleCopy = async () => {
+    if (!previewTrip) return;
+    await navigator.clipboard.writeText(generateMessage(previewTrip));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   const totalNetWeight = (trip: Trip) =>
     trip.weigh_bridge.reduce((sum, w) => sum + w.net_weight, 0);
 
@@ -253,7 +291,6 @@ export default function TripsPage() {
               <th className="text-left px-4 py-3 font-medium">Vehicle</th>
               <th className="text-left px-4 py-3 font-medium">Customer</th>
               <th className="text-left px-4 py-3 font-medium">Dropoff</th>
-              <th className="text-left px-4 py-3 font-medium">Bins</th>
               <th className="text-left px-4 py-3 font-medium">Net Weight</th>
               <th className="text-left px-4 py-3 font-medium">Requester</th>
               <th className="text-left px-4 py-3 font-medium">Status</th>
@@ -264,7 +301,7 @@ export default function TripsPage() {
           <tbody>
             {trips.length === 0 && (
               <tr>
-                <td colSpan={9} className="text-center px-4 py-6 text-gray-400">No trips yet</td>
+                <td colSpan={8} className="text-center px-4 py-6 text-gray-400">No trips yet</td>
               </tr>
             )}
             {trips.map(t => {
@@ -275,46 +312,56 @@ export default function TripsPage() {
                   <td className="px-4 py-3 text-gray-600">{t.customers?.name ?? '—'}</td>
                   <td className="px-4 py-3 text-gray-600">{t.locations?.name ?? '—'}</td>
                   <td className="px-4 py-3">
-                    {t.trip_bins.length === 0 ? (
+                    {t.weigh_bridge.length === 0 ? (
                       <span className="text-gray-400">—</span>
+                    ) : t.weigh_bridge.length === 1 ? (
+                      <span className="text-gray-700 text-sm">{t.weigh_bridge[0].net_weight.toFixed(3)} kg</span>
                     ) : (
-                      <div className="flex flex-col gap-0.5">
-                        {t.trip_bins.map(tb => (
-                          <span key={tb.id} className="text-xs">
-                            <span className={tb.action === 'dropoff' ? 'text-blue-600' : 'text-orange-600'}>
-                              {tb.action === 'dropoff' ? '↓' : '↑'}
-                            </span>
-                            {' '}{tb.bins?.serial_number ?? '—'}
-                          </span>
+                      <div className="text-xs space-y-0.5">
+                        {t.weigh_bridge.map((w, i) => (
+                          <div key={i} className="text-gray-500">Load {i + 1}: {w.net_weight.toFixed(3)} kg</div>
                         ))}
+                        <div className="font-semibold text-gray-800 border-t pt-0.5 mt-0.5">{netWeight.toFixed(3)} kg</div>
                       </div>
                     )}
-                  </td>
-                  <td className="px-4 py-3 text-gray-600">
-                    {netWeight > 0 ? `${netWeight.toFixed(3)} kg` : '—'}
                   </td>
                   <td className="px-4 py-3 text-gray-600">{t.requester ?? '—'}</td>
                   <td className="px-4 py-3">
                     <span className={statusBadge(t.status)}>{t.status}</span>
                   </td>
                   <td className="px-4 py-3 text-gray-500 text-xs">{formatDate(t.created_at)}</td>
-                  <td className="px-4 py-3 text-right whitespace-nowrap">
-                    {t.status === 'open' && (
-                      <>
-                        <button onClick={() => handleMarkComplete(t.id)} className="text-green-600 hover:underline text-sm mr-3">
-                          Complete
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end gap-3">
+                      {t.status === 'open' && (
+                        <div className="flex gap-1.5">
+                          <button onClick={() => handleMarkComplete(t.id)} className="px-2.5 py-1 text-xs font-medium bg-green-100 text-green-700 rounded hover:bg-green-200">
+                            Complete
+                          </button>
+                          <button onClick={() => handleCancel(t.id)} className="px-2.5 py-1 text-xs font-medium bg-orange-100 text-orange-700 rounded hover:bg-orange-200">
+                            Cancel
+                          </button>
+                        </div>
+                      )}
+                      <div className="flex gap-0.5">
+                        <button onClick={() => { setPreviewTrip(t); setCopied(false); }} title="Preview WhatsApp message" className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                         </button>
-                        <button onClick={() => handleCancel(t.id)} className="text-orange-600 hover:underline text-sm mr-3">
-                          Cancel
+                        <button onClick={() => openEdit(t)} title="Edit" className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                          </svg>
                         </button>
-                      </>
-                    )}
-                    <button onClick={() => openEdit(t)} className="text-blue-600 hover:underline text-sm mr-3">
-                      Edit
-                    </button>
-                    <button onClick={() => handleDelete(t.id)} className="text-red-600 hover:underline text-sm">
-                      Delete
-                    </button>
+                        <button onClick={() => handleDelete(t.id)} title="Delete" className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="3 6 5 6 21 6"/>
+                            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                            <path d="M10 11v6"/><path d="M14 11v6"/>
+                            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
                   </td>
                 </tr>
               );
@@ -428,7 +475,11 @@ export default function TripsPage() {
                     <div key={i} className="flex gap-2 items-center">
                       <select
                         value={ba.bin_id}
-                        onChange={e => setBinActions(prev => prev.map((a, j) => j === i ? { ...a, bin_id: e.target.value } : a))}
+                        onChange={e => {
+                          const bin = binOptions.find(b => b.id === e.target.value);
+                          const action = bin?.location_id ? 'dropoff' : bin?.customer_id ? 'pickup' : ba.action;
+                          setBinActions(prev => prev.map((a, j) => j === i ? { ...a, bin_id: e.target.value, action } : a));
+                        }}
                         className="flex-1 border rounded px-3 py-2 text-sm"
                       >
                         <option value="">Select bin</option>
@@ -470,6 +521,45 @@ export default function TripsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {previewTrip && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold">WhatsApp Message</h2>
+              <button onClick={() => setPreviewTrip(null)} className="text-gray-400 hover:text-gray-600">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+
+            <pre className="bg-gray-50 border rounded p-4 text-sm text-gray-800 whitespace-pre-wrap font-sans leading-relaxed mb-4 max-h-[60vh] overflow-y-auto">
+              {generateMessage(previewTrip)}
+            </pre>
+
+            <div className="flex gap-3">
+              <button
+                onClick={handleCopy}
+                className={`flex items-center gap-2 px-5 py-2 rounded font-medium text-sm transition-colors ${copied ? 'bg-green-600 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+              >
+                {copied ? (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    Copied!
+                  </>
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    Copy Message
+                  </>
+                )}
+              </button>
+              <button onClick={() => setPreviewTrip(null)} className="border px-5 py-2 rounded font-medium text-sm hover:bg-gray-50">
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}
