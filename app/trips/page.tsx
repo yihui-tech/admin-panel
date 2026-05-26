@@ -24,6 +24,7 @@ type Trip = {
   vehicle_number: string;
   driver_id: string | null;
   customer_id: string | null;
+  customer_location_id: number | null;
   dropoff_id: string | null;
   requester: string | null;
   remarks: string | null;
@@ -31,6 +32,7 @@ type Trip = {
   trip_order: number | null;
   created_at: string;
   customers: { name: string; address: string | null; contact_person: string | null; contact_number: string | null } | null;
+  customer_locations: { name: string; address: string | null; contact_person: string | null; contact_number: string | null } | null;
   locations: { name: string; address: string | null } | null;
   weigh_bridge: { net_weight: number }[];
   trip_bins: { id: string; bin_id: string; action: string; bins: { serial_number: string } | null }[];
@@ -39,14 +41,16 @@ type Trip = {
 type Vehicle = { plate_number: string };
 type Driver = { employee_id: string; name: string };
 type CustomerOption = { customer_id: number; name: string; address: string | null };
+type CustomerLocationOption = { id: number; customer_id: number; name: string; address: string | null; contact_person: string | null; contact_number: string | null };
 type LocationOption = { id: number; name: string; address: string | null };
-type BinOption = { id: string; serial_number: string; customer_id: number | null; location_id: number | null };
+type BinOption = { id: string; serial_number: string; customer_id: number | null; location_id: number | null; customer_location_id: number | null };
 type BinAction = { bin_id: string; action: 'dropoff' | 'pickup' };
 
 const emptyForm = {
   vehicle_number: '',
   driver_id: '',
   customer_id: '',
+  customer_location_id: '',
   dropoff_id: '',
   requester: '',
   remarks: '',
@@ -118,7 +122,12 @@ function SortableTripRow({
         )}
       </td>
       <td className="px-4 py-3 font-medium">{trip.vehicle_number}</td>
-      <td className="px-4 py-3 text-gray-600">{trip.customers?.name ?? '—'}</td>
+      <td className="px-4 py-3 text-gray-600">
+        {trip.customers?.name ?? '—'}
+        {trip.customer_locations && (
+          <span className="block text-xs text-gray-400">{trip.customer_locations.name}</span>
+        )}
+      </td>
       <td className="px-4 py-3 text-gray-600">{trip.locations?.name ?? '—'}</td>
       <td className="px-4 py-3">
         {trip.weigh_bridge.length === 0 ? (
@@ -181,6 +190,7 @@ export default function TripsPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [customerOptions, setCustomerOptions] = useState<CustomerOption[]>([]);
+  const [customerLocationOptions, setCustomerLocationOptions] = useState<CustomerLocationOption[]>([]);
   const [locationOptions, setLocationOptions] = useState<LocationOption[]>([]);
   const [binOptions, setBinOptions] = useState<BinOption[]>([]);
 
@@ -208,22 +218,24 @@ export default function TripsPage() {
   const fetchTrips = async () => {
     const { data } = await supabase
       .from('trips')
-      .select('id, vehicle_number, driver_id, customer_id, dropoff_id, requester, remarks, status, trip_order, created_at, customers(name, address, contact_person, contact_number), locations(name, address), weigh_bridge(net_weight), trip_bins(id, bin_id, action, bins(serial_number))')
+      .select('id, vehicle_number, driver_id, customer_id, customer_location_id, dropoff_id, requester, remarks, status, trip_order, created_at, customers(name, address, contact_person, contact_number), customer_locations(name, address, contact_person, contact_number), locations(name, address), weigh_bridge(net_weight), trip_bins(id, bin_id, action, bins(serial_number))')
       .order('created_at', { ascending: false });
     if (data) setTrips(data as unknown as Trip[]);
   };
 
   const fetchLookups = async () => {
-    const [v, d, c, l, b] = await Promise.all([
+    const [v, d, c, cl, l, b] = await Promise.all([
       supabase.from('vehicles').select('plate_number').order('plate_number'),
       supabase.from('drivers').select('employee_id, name').order('name'),
       supabase.from('customers').select('customer_id, name, address').order('name'),
+      supabase.from('customer_locations').select('id, customer_id, name, address, contact_person, contact_number').order('name'),
       supabase.from('locations').select('id, name, address').order('name'),
-      supabase.from('bins').select('id, serial_number, customer_id, location_id').order('serial_number'),
+      supabase.from('bins').select('id, serial_number, customer_id, location_id, customer_location_id').order('serial_number'),
     ]);
     if (v.data) setVehicles(v.data);
     if (d.data) setDrivers(d.data);
     if (c.data) setCustomerOptions(c.data);
+    if (cl.data) setCustomerLocationOptions(cl.data);
     if (l.data) setLocationOptions(l.data);
     if (b.data) setBinOptions(b.data);
   };
@@ -270,7 +282,8 @@ export default function TripsPage() {
     );
   };
 
-  const selectedCustomerAddress = customerOptions.find(c => String(c.customer_id) === form.customer_id)?.address ?? '';
+  const sitesForCustomer = customerLocationOptions.filter(l => String(l.customer_id) === form.customer_id);
+  const selectedSite = customerLocationOptions.find(l => String(l.id) === form.customer_location_id) ?? null;
   const selectedDropoffAddress = locationOptions.find(l => String(l.id) === form.dropoff_id)?.address ?? '';
 
   const openCreate = () => {
@@ -287,6 +300,7 @@ export default function TripsPage() {
       vehicle_number: trip.vehicle_number,
       driver_id: trip.driver_id ?? '',
       customer_id: trip.customer_id != null ? String(trip.customer_id) : '',
+      customer_location_id: trip.customer_location_id != null ? String(trip.customer_location_id) : '',
       dropoff_id: trip.dropoff_id != null ? String(trip.dropoff_id) : '',
       requester: trip.requester ?? '',
       remarks: trip.remarks ?? '',
@@ -302,7 +316,9 @@ export default function TripsPage() {
     const { name, value } = e.target;
     if (name === 'customer_id' && value === '__new__') {
       setShowNewCustomer(true);
-      setForm(prev => ({ ...prev, customer_id: '' }));
+      setForm(prev => ({ ...prev, customer_id: '', customer_location_id: '' }));
+    } else if (name === 'customer_id') {
+      setForm(prev => ({ ...prev, customer_id: value, customer_location_id: '' }));
     } else {
       setForm(prev => ({ ...prev, [name]: value }));
     }
@@ -334,6 +350,7 @@ export default function TripsPage() {
       vehicle_number: form.vehicle_number,
       driver_id: form.driver_id || null,
       customer_id: form.customer_id ? parseInt(form.customer_id, 10) : null,
+      customer_location_id: form.customer_location_id ? parseInt(form.customer_location_id, 10) : null,
       dropoff_id: form.dropoff_id ? parseInt(form.dropoff_id, 10) : null,
       requester: form.requester || null,
       remarks: form.remarks || null,
@@ -384,10 +401,12 @@ export default function TripsPage() {
         await supabase.from('bins').update({
           location_id: trip.dropoff_id ? Number(trip.dropoff_id) : null,
           customer_id: null,
+          customer_location_id: null,
         }).eq('id', tb.bin_id);
       } else if (tb.action === 'dropoff') {
         await supabase.from('bins').update({
-          customer_id: trip.customer_id ? Number(trip.customer_id) : null,
+          customer_location_id: trip.customer_location_id ?? null,
+          customer_id: null,
           location_id: null,
         }).eq('id', tb.bin_id);
       }
@@ -411,15 +430,20 @@ export default function TripsPage() {
 
   const generateMessage = (t: Trip) => {
     const date = new Date(t.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const loc = t.customer_locations;
+    const pickupName = loc ? `${t.customers?.name ?? ''} (${loc.name})` : (t.customers?.name ?? '');
+    const pickupAddress = loc?.address ?? t.customers?.address ?? '';
+    const contactPerson = loc?.contact_person ?? t.customers?.contact_person ?? '';
+    const contactNumber = loc?.contact_number ?? t.customers?.contact_number ?? '';
     const lines = [
       `Date : ${date}`,
       ``,
       `Order placed by - ${t.requester ?? ''}`,
       ``,
-      `Pick up from - ${t.customers?.name ?? ''}`,
-      `Pick up address - ${t.customers?.address ?? ''}`,
-      `Person in charge - ${t.customers?.contact_person ?? ''}`,
-      `Contact no. - ${t.customers?.contact_number ?? ''}`,
+      `Pick up from - ${pickupName}`,
+      `Pick up address - ${pickupAddress}`,
+      `Person in charge - ${contactPerson}`,
+      `Contact no. - ${contactNumber}`,
       ``,
       `Drop off to - ${t.locations?.name ?? ''}`,
       `Drop off address - ${t.locations?.address ?? ''}`,
@@ -573,10 +597,25 @@ export default function TripsPage() {
                   <option value="__new__">+ Create new customer…</option>
                 </select>
 
-                {!showNewCustomer && selectedCustomerAddress && (
-                  <div className="mt-2 px-3 py-2 bg-gray-50 border rounded text-sm text-gray-600">
-                    <span className="text-xs font-medium text-gray-400 uppercase tracking-wide mr-2">Pick up address</span>
-                    {selectedCustomerAddress}
+                {!showNewCustomer && form.customer_id && sitesForCustomer.length > 0 && (
+                  <div className="mt-2">
+                    <select
+                      name="customer_location_id"
+                      value={form.customer_location_id}
+                      onChange={handleChange}
+                      className="w-full border rounded px-3 py-2"
+                    >
+                      <option value="">— Select site —</option>
+                      {sitesForCustomer.map(s => (
+                        <option key={s.id} value={String(s.id)}>{s.name}</option>
+                      ))}
+                    </select>
+                    {selectedSite && (
+                      <div className="mt-2 px-3 py-2 bg-gray-50 border rounded text-sm text-gray-600 space-y-0.5">
+                        {selectedSite.address && <div><span className="text-xs font-medium text-gray-400 uppercase tracking-wide mr-2">Address</span>{selectedSite.address}</div>}
+                        {selectedSite.contact_person && <div><span className="text-xs font-medium text-gray-400 uppercase tracking-wide mr-2">Contact</span>{selectedSite.contact_person}{selectedSite.contact_number ? ` · ${selectedSite.contact_number}` : ''}</div>}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -645,7 +684,7 @@ export default function TripsPage() {
                         value={ba.bin_id}
                         onChange={e => {
                           const bin = binOptions.find(b => b.id === e.target.value);
-                          const action = bin?.location_id ? 'dropoff' : bin?.customer_id ? 'pickup' : ba.action;
+                          const action = bin?.location_id ? 'dropoff' : (bin?.customer_id || bin?.customer_location_id) ? 'pickup' : ba.action;
                           setBinActions(prev => prev.map((a, j) => j === i ? { ...a, bin_id: e.target.value, action } : a));
                         }}
                         className="flex-1 border rounded px-3 py-2 text-sm"

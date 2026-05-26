@@ -7,15 +7,19 @@ type Bin = {
   id: string;
   serial_number: string;
   customer_id: number | null;
+  customer_location_id: number | null;
   location_id: number | null;
   created_at: string;
   type: string | null;
   size: string | null;
   customers: { name: string } | null;
+  customer_locations: { customer_id: number; name: string; customers: { name: string } | null } | null;
   locations: { name: string } | null;
+  last_dropoff_at: string | null;
 };
 
 type CustomerOption = { customer_id: number; name: string };
+type CustomerLocationOption = { id: number; customer_id: number; name: string };
 type LocationOption = { id: number; name: string };
 type DriverOption = { employee_id: string; name: string };
 
@@ -23,6 +27,7 @@ type BinForm = {
   serial_number: string;
   locationType: '' | 'customer' | 'location';
   customer_id: string;
+  customer_location_id: string;
   location_id: string;
   type: string;
   size: string;
@@ -45,16 +50,21 @@ const emptyForm: BinForm = {
   serial_number: '',
   locationType: '',
   customer_id: '',
+  customer_location_id: '',
   location_id: '',
   type: '',
   size: '',
 };
 
 function binToForm(bin: Bin): BinForm {
+  const atCustomer = !!(bin.customer_location_id || bin.customer_id);
   return {
     serial_number: bin.serial_number,
-    locationType: bin.customer_id ? 'customer' : bin.location_id ? 'location' : '',
-    customer_id: bin.customer_id ? String(bin.customer_id) : '',
+    locationType: atCustomer ? 'customer' : bin.location_id ? 'location' : '',
+    customer_id: bin.customer_location_id
+      ? String(bin.customer_locations?.customer_id ?? '')
+      : bin.customer_id ? String(bin.customer_id) : '',
+    customer_location_id: bin.customer_location_id ? String(bin.customer_location_id) : '',
     location_id: bin.location_id ? String(bin.location_id) : '',
     type: bin.type ?? '',
     size: bin.size ?? '',
@@ -64,7 +74,8 @@ function binToForm(bin: Bin): BinForm {
 function formToPayload(form: BinForm) {
   return {
     serial_number: form.serial_number,
-    customer_id: form.locationType === 'customer' && form.customer_id ? parseInt(form.customer_id, 10) : null,
+    customer_location_id: form.locationType === 'customer' && form.customer_location_id ? parseInt(form.customer_location_id, 10) : null,
+    customer_id: null,
     location_id: form.locationType === 'location' && form.location_id ? parseInt(form.location_id, 10) : null,
     type: form.type || null,
     size: form.size || null,
@@ -74,6 +85,7 @@ function formToPayload(form: BinForm) {
 export default function BinsPage() {
   const [bins, setBins] = useState<Bin[]>([]);
   const [customerOptions, setCustomerOptions] = useState<CustomerOption[]>([]);
+  const [customerLocationOptions, setCustomerLocationOptions] = useState<CustomerLocationOption[]>([]);
   const [locationOptions, setLocationOptions] = useState<LocationOption[]>([]);
   const [driverOptions, setDriverOptions] = useState<DriverOption[]>([]);
   const [showModal, setShowModal] = useState(false);
@@ -89,21 +101,45 @@ export default function BinsPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
 
   const fetchBins = async () => {
-    const { data } = await supabase
+    const { data: rawBins } = await supabase
       .from('bins')
-      .select('id, serial_number, customer_id, location_id, created_at, type, size, customers(name), locations(name)')
+      .select('id, serial_number, customer_id, customer_location_id, location_id, created_at, type, size, customers(name), customer_locations(customer_id, name, customers(name)), locations(name)')
       .order('serial_number');
-    if (data) setBins(data as unknown as Bin[]);
+    if (!rawBins) return;
+
+    // For bins currently at a customer, look up the most recent completed dropoff
+    const customerBinIds = rawBins.filter(b => b.customer_location_id || b.customer_id).map(b => b.id);
+    let lastDropoffMap: Record<string, string> = {};
+    if (customerBinIds.length > 0) {
+      const { data: dropoffs } = await supabase
+        .from('trip_bins')
+        .select('bin_id, trips!inner(completed_at)')
+        .eq('action', 'dropoff')
+        .eq('trips.status', 'completed')
+        .in('bin_id', customerBinIds)
+        .order('trips(completed_at)', { ascending: false });
+      if (dropoffs) {
+        for (const row of dropoffs as unknown as { bin_id: string; trips: { completed_at: string | null } }[]) {
+          if (!lastDropoffMap[row.bin_id] && row.trips?.completed_at) {
+            lastDropoffMap[row.bin_id] = row.trips.completed_at;
+          }
+        }
+      }
+    }
+
+    setBins(rawBins.map(b => ({ ...b, last_dropoff_at: lastDropoffMap[b.id] ?? null })) as unknown as Bin[]);
   };
 
   useEffect(() => {
     const fetchLookups = async () => {
-      const [c, l, d] = await Promise.all([
+      const [c, cl, l, d] = await Promise.all([
         supabase.from('customers').select('customer_id, name').order('name'),
+        supabase.from('customer_locations').select('id, customer_id, name').order('name'),
         supabase.from('locations').select('id, name').order('name'),
         supabase.from('drivers').select('employee_id, name').order('name'),
       ]);
       if (c.data) setCustomerOptions(c.data);
+      if (cl.data) setCustomerLocationOptions(cl.data);
       if (l.data) setLocationOptions(l.data);
       if (d.data) setDriverOptions(d.data);
     };
@@ -138,7 +174,11 @@ export default function BinsPage() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setForm(prev => ({ ...prev, [name]: value }));
+    if (name === 'customer_id') {
+      setForm(prev => ({ ...prev, customer_id: value, customer_location_id: '' }));
+    } else {
+      setForm(prev => ({ ...prev, [name]: value }));
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -171,15 +211,26 @@ export default function BinsPage() {
   const sizeOptions = Array.from(new Set(bins.map(b => b.size).filter(Boolean))) as string[];
 
   const filteredBins = bins.filter(bin => {
-    if (locationFilter === 'customer' && !bin.customer_id) return false;
+    if (locationFilter === 'customer' && !bin.customer_id && !bin.customer_location_id) return false;
     if (locationFilter === 'yard' && !bin.location_id) return false;
-    if (locationFilter === 'unknown' && (bin.customer_id || bin.location_id)) return false;
+    if (locationFilter === 'unknown' && (bin.customer_id || bin.customer_location_id || bin.location_id)) return false;
     if (typeFilter && bin.type !== typeFilter) return false;
     if (sizeFilter && bin.size !== sizeFilter) return false;
     return true;
   });
 
+  const daysAtSite = (bin: Bin): string | null => {
+    if (!bin.customer_location_id && !bin.customer_id) return null;
+    if (!bin.last_dropoff_at) return null;
+    const days = Math.floor((Date.now() - new Date(bin.last_dropoff_at).getTime()) / 86_400_000);
+    return days === 0 ? 'Today' : days === 1 ? '1 day' : `${days} days`;
+  };
+
   const currentLocation = (bin: Bin) => {
+    if (bin.customer_locations) {
+      const siteName = `${bin.customer_locations.customers?.name ?? ''} · ${bin.customer_locations.name}`;
+      return { label: 'At customer', value: siteName, color: 'text-blue-700 bg-blue-50' };
+    }
     if (bin.customers) return { label: 'At customer', value: bin.customers.name, color: 'text-blue-700 bg-blue-50' };
     if (bin.locations) return { label: 'At yard', value: bin.locations.name, color: 'text-green-700 bg-green-50' };
     return { label: 'Unknown', value: '—', color: 'text-gray-500 bg-gray-50' };
@@ -246,19 +297,21 @@ export default function BinsPage() {
               <th className="text-left px-4 py-3 font-medium">Type</th>
               <th className="text-left px-4 py-3 font-medium">Size</th>
               <th className="text-left px-4 py-3 font-medium">Current Location</th>
+              <th className="text-left px-4 py-3 font-medium">Days at Site</th>
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody>
             {filteredBins.length === 0 && (
               <tr>
-                <td colSpan={5} className="text-center px-4 py-6 text-gray-400">
+                <td colSpan={6} className="text-center px-4 py-6 text-gray-400">
                   {bins.length === 0 ? 'No bins registered' : 'No bins match this filter'}
                 </td>
               </tr>
             )}
             {filteredBins.map(bin => {
               const loc = currentLocation(bin);
+              const days = daysAtSite(bin);
               return (
                 <tr key={bin.id} className="border-b last:border-0 hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium">{bin.serial_number}</td>
@@ -269,6 +322,18 @@ export default function BinsPage() {
                       <span className="text-gray-400 font-normal">{loc.label}:</span>
                       {loc.value}
                     </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    {days ? (
+                      <span className={`text-xs font-medium px-2 py-1 rounded ${
+                        days === 'Today' ? 'bg-green-50 text-green-700' :
+                        parseInt(days) >= 14 ? 'bg-red-50 text-red-700' :
+                        parseInt(days) >= 7 ? 'bg-orange-50 text-orange-700' :
+                        'bg-gray-50 text-gray-600'
+                      }`}>{days}</span>
+                    ) : (
+                      <span className="text-gray-300 text-xs">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
                     <button onClick={() => openHistory(bin)} title="History" className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded mr-1">
@@ -404,13 +469,26 @@ export default function BinsPage() {
               </div>
 
               {form.locationType === 'customer' && (
-                <div>
-                  <label className="block text-sm font-medium mb-1">Customer</label>
-                  <select name="customer_id" value={form.customer_id} onChange={handleChange} required className="w-full border rounded px-3 py-2">
-                    <option value="">Select customer</option>
-                    {customerOptions.map(c => <option key={c.customer_id} value={String(c.customer_id)}>{c.name}</option>)}
-                  </select>
-                </div>
+                <>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Customer</label>
+                    <select name="customer_id" value={form.customer_id} onChange={handleChange} required className="w-full border rounded px-3 py-2">
+                      <option value="">Select customer</option>
+                      {customerOptions.map(c => <option key={c.customer_id} value={String(c.customer_id)}>{c.name}</option>)}
+                    </select>
+                  </div>
+                  {form.customer_id && (
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Site</label>
+                      <select name="customer_location_id" value={form.customer_location_id} onChange={handleChange} required className="w-full border rounded px-3 py-2">
+                        <option value="">Select site</option>
+                        {customerLocationOptions
+                          .filter(l => String(l.customer_id) === form.customer_id)
+                          .map(l => <option key={l.id} value={String(l.id)}>{l.name}</option>)}
+                      </select>
+                    </div>
+                  )}
+                </>
               )}
 
               {form.locationType === 'location' && (
