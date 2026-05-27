@@ -331,8 +331,31 @@ export default function TripsPage() {
     }
   };
 
+  const binAtCustomer = (bin: BinOption) => !!(bin.customer_id || bin.customer_location_id);
+  const binAtYard = (bin: BinOption) => !!(bin.location_id);
+
+  const binActionConflict = (bin_id: string, action: 'dropoff' | 'pickup'): string | null => {
+    const bin = binOptions.find(b => b.id === bin_id);
+    if (!bin) return null;
+    if (binAtCustomer(bin) && action === 'dropoff')
+      return `Bin ${bin.serial_number} is already at a customer site — cannot drop off again. Change action to Pick up.`;
+    if (binAtYard(bin) && action === 'pickup')
+      return `Bin ${bin.serial_number} is at the yard — cannot pick up from customer. Change action to Drop off.`;
+    return null;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const conflictErrors = binActions
+      .filter(ba => ba.bin_id)
+      .map(ba => binActionConflict(ba.bin_id, ba.action))
+      .filter(Boolean);
+    if (conflictErrors.length > 0) {
+      alert(conflictErrors.join('\n'));
+      return;
+    }
+
     setLoading(true);
 
     const payload = {
@@ -667,37 +690,46 @@ export default function TripsPage() {
               <div>
                 <label className="block text-sm font-medium mb-2">Bin Movements</label>
                 <div className="space-y-2">
-                  {binActions.map((ba, i) => (
-                    <div key={i} className="flex gap-2 items-center">
-                      <select
-                        value={ba.bin_id}
-                        onChange={e => {
-                          const bin = binOptions.find(b => b.id === e.target.value);
-                          const action = bin?.location_id ? 'dropoff' : (bin?.customer_id || bin?.customer_location_id) ? 'pickup' : ba.action;
-                          setBinActions(prev => prev.map((a, j) => j === i ? { ...a, bin_id: e.target.value, action } : a));
-                        }}
-                        className="flex-1 border rounded px-3 py-2 text-sm"
-                      >
-                        <option value="">Select bin</option>
-                        {binOptions.map(b => <option key={b.id} value={b.id}>{b.serial_number}</option>)}
-                      </select>
-                      <select
-                        value={ba.action}
-                        onChange={e => setBinActions(prev => prev.map((a, j) => j === i ? { ...a, action: e.target.value as 'dropoff' | 'pickup' } : a))}
-                        className="border rounded px-3 py-2 text-sm"
-                      >
-                        <option value="dropoff">Drop off</option>
-                        <option value="pickup">Pick up</option>
-                      </select>
-                      <button
-                        type="button"
-                        onClick={() => setBinActions(prev => prev.filter((_, j) => j !== i))}
-                        className="text-red-500 hover:text-red-700 px-1 text-lg leading-none"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
+                  {binActions.map((ba, i) => {
+                    const selectedBin = binOptions.find(b => b.id === ba.bin_id);
+                    const conflict = ba.bin_id ? binActionConflict(ba.bin_id, ba.action) : null;
+                    return (
+                      <div key={i} className="space-y-1">
+                        <div className="flex gap-2 items-center">
+                          <select
+                            value={ba.bin_id}
+                            onChange={e => {
+                              const bin = binOptions.find(b => b.id === e.target.value);
+                              const action = bin?.location_id ? 'dropoff' : (bin?.customer_id || bin?.customer_location_id) ? 'pickup' : ba.action;
+                              setBinActions(prev => prev.map((a, j) => j === i ? { ...a, bin_id: e.target.value, action } : a));
+                            }}
+                            className="flex-1 border rounded px-3 py-2 text-sm"
+                          >
+                            <option value="">Select bin</option>
+                            {binOptions.map(b => <option key={b.id} value={b.id}>{b.serial_number}</option>)}
+                          </select>
+                          <select
+                            value={ba.action}
+                            onChange={e => setBinActions(prev => prev.map((a, j) => j === i ? { ...a, action: e.target.value as 'dropoff' | 'pickup' } : a))}
+                            className={`border rounded px-3 py-2 text-sm ${conflict ? 'border-red-400 bg-red-50' : ''}`}
+                          >
+                            <option value="dropoff" disabled={!!(selectedBin && binAtCustomer(selectedBin))}>Drop off</option>
+                            <option value="pickup" disabled={!!(selectedBin && binAtYard(selectedBin))}>Pick up</option>
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => setBinActions(prev => prev.filter((_, j) => j !== i))}
+                            className="text-red-500 hover:text-red-700 px-1 text-lg leading-none"
+                          >
+                            ×
+                          </button>
+                        </div>
+                        {conflict && (
+                          <p className="text-xs text-red-600 pl-1">{conflict}</p>
+                        )}
+                      </div>
+                    );
+                  })}
                   <button
                     type="button"
                     onClick={() => setBinActions(prev => [...prev, { bin_id: '', action: 'dropoff' }])}
