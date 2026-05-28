@@ -10,14 +10,27 @@ Two domains:
 1. **Projects** — daily worker assignment, timesheets, rolling labour cost tracking
 2. **Trips** — truck trip dispatch, bin inventory, WhatsApp message generation, drag-to-reorder
 
+**Production URL:** https://ops.yihui.sg
+**Staging URL:** https://stg.ops.yihui.sg
 **Repo:** https://github.com/yihui-tech/worker-assignment
 **Companion app:** `trips-records` → https://github.com/yihui-tech/trips-records
 
 ---
 
+## Git Branches
+
+| Branch | Deployment | Supabase |
+|---|---|---|
+| `main` | ops.yihui.sg (production) | prod (`xshucanagbaxgfirtbuc`) |
+| `staging` | stg.ops.yihui.sg | staging (`pkbqsinxfaiphdargamd`) |
+
+Workflow: develop on `staging` → test on `stg.ops.yihui.sg` → merge to `main` → live.
+
+---
+
 ## Cross-App Interactions with trips-records
 
-Both apps share the same Supabase project. Supabase is the integration point — apps do not call each other directly.
+Both apps share the same Supabase project per environment. Supabase is the integration point — apps do not call each other directly.
 
 ### What this app owns
 - Trip creation and all trip metadata (vehicle, driver, customer, site, dropoff, requester, remarks)
@@ -55,8 +68,8 @@ If driver marks a trip complete in trips-records, bin locations are NOT updated 
 |---|---|
 | Frontend | Next.js 16 (App Router), React 19, Tailwind CSS v4, TypeScript |
 | Database | Supabase (PostgreSQL) |
-| Auth | Not yet implemented (see root CLAUDE.md for plan) |
-| Deployment | Vercel |
+| Auth | Supabase Auth (`@supabase/ssr`) — all routes protected |
+| Deployment | Vercel (Hobby plan) |
 
 ---
 
@@ -74,28 +87,31 @@ npm run lint         # Run ESLint
 ## Project Structure
 
 ```
+middleware.ts                   # Auth guard — protects all routes, redirects to /login
 app/
   components/
-    Nav.tsx              # Top navigation (Projects | Trips sections)
-  page.tsx               # Home dashboard (cost summary + bin locations)
+    Nav.tsx                     # Top navigation (Projects | Trips sections) + Sign out button
+  login/
+    page.tsx                    # Login page (email + password via Supabase Auth)
+  page.tsx                      # Home dashboard (cost summary + bin locations)
   analytics/
-    page.tsx             # Bin swap analytics per customer site (week/month toggle)
+    page.tsx                    # Bin swap analytics per customer site (week/month toggle)
   assignments/
-    page.tsx             # Daily worker assignment
+    page.tsx                    # Daily worker assignment
   bins/
-    page.tsx             # Bin inventory (CRUD + filters + days at site)
+    page.tsx                    # Bin inventory (CRUD + filters + days at site)
   cost/
-    page.tsx             # Rolling cost dashboard per project
+    page.tsx                    # Rolling cost dashboard per project
   customers/
-    page.tsx             # Customer CRUD + multi-site management
+    page.tsx                    # Customer CRUD + multi-site management
   projects/
-    page.tsx             # Project CRUD
+    page.tsx                    # Project CRUD
   timesheets/
-    page.tsx             # Timesheet entry per worker per project
+    page.tsx                    # Timesheet entry per worker per project
   trips/
-    page.tsx             # Trip dispatch, bin movements, WhatsApp, drag-to-reorder
+    page.tsx                    # Trip dispatch, bin movements, WhatsApp, drag-to-reorder
   lib/
-    supabase.ts          # Supabase client
+    supabase.ts                 # Supabase client (legacy pattern, used in data pages)
   layout.tsx
   globals.css
 ```
@@ -104,10 +120,26 @@ app/
 
 ## Environment Variables
 
-```
-NEXT_PUBLIC_SUPABASE_URL=https://xshucanagbaxgfirtbuc.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-```
+Set in Vercel with scope split (Production vs Preview):
+
+| Variable | Production | Preview (staging) |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | `https://xshucanagbaxgfirtbuc.supabase.co` | `https://pkbqsinxfaiphdargamd.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | prod anon key | staging anon key |
+
+Local development uses `.env.local` (not committed).
+
+---
+
+## Authentication
+
+All routes are protected by `middleware.ts` using `@supabase/ssr`:
+- Unauthenticated requests redirect to `/login`
+- Authenticated users on `/login` are redirected to `/`
+- Sign out button in the top-right of `Nav.tsx`
+- Admin users are created in Supabase dashboard → Authentication → Users
+- Use `createBrowserClient` for auth operations in client components
+- Use `createServerClient` in middleware for session refresh and auth checks
 
 ---
 
@@ -140,10 +172,11 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 ### /trips
 - Create and manage truck dispatch trips
 - Fields: vehicle, driver, customer, customer site (filtered by customer), dropoff location, requester, remarks
-- Bin movements: add bins with dropoff/pickup actions — see root CLAUDE.md for validation rules
+- Bin movements: add bins with dropoff/pickup/roundtrip actions — see root CLAUDE.md for validation rules
 - Drag-to-reorder: open trips only, requires driver + date filter applied; persists via `trip_order`
 - Trip actions: Complete, Cancel, Copy (WhatsApp), Edit, Delete
 - On complete: updates trip status + bin locations (see root CLAUDE.md)
+- Weigh bridge loads shown per trip: net weight, internal net (if rubbish recorded), total adjustments (rubbish + FOC)
 
 ### /bins
 - Full CRUD via modal: serial number, type, size, unit weight, status, remarks, location
@@ -190,3 +223,4 @@ Nav section icons: `<FolderKanban>` for Projects, `<Truck>` for Trips
 **Supabase**
 - Always handle both `data` and `error`
 - RLS enabled — test queries in context of the correct user role
+- Use `createBrowserClient` from `@supabase/ssr` for any auth-related operations (sign in, sign out)

@@ -1,6 +1,6 @@
 # Business Rules — worker-assignment
 
-See root `../Business rules.md` for shared rules: company context, trips, bin tracking, staging/prod, deferred work.
+See root `../Business rules.md` for shared rules: company context, trips, bin tracking, weigh bridge weight logic, deployment environments, deferred work.
 Companion app: `trips-records` → https://github.com/yihui-tech/trips-records
 
 This file covers rules specific to the **Projects, Workers, Assignments, Cost, and cross-app trip behaviour** from the admin perspective.
@@ -91,3 +91,12 @@ Project total = SUM of all timesheet entry costs where project_id matches
 - A worker can have multiple entries on the same day (one per project)
 - `source` field: `manual` (default) or `csv_import`
 - CSV import from Times Software is **not yet built**
+
+---
+
+## Domain: Weigh Bridge (read-only in this app)
+
+- This app reads `weigh_bridge` loads but does not write them (trips-records writes them)
+- Trips list shows net weight breakdown per load
+- When rubbish or FOC weights are recorded: internal net and total adjustments are shown alongside net weight
+- See root `../Business rules.md` and `trips-records/Business rules.md` for full weight calculation rules
