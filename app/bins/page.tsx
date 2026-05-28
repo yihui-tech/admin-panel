@@ -43,7 +43,7 @@ type BinHistoryEntry = {
     completed_at: string | null;
     driver_id: string | null;
     customers: { name: string } | null;
-    locations: { name: string } | null;
+    customer_locations: { name: string } | null;
   } | null;
 };
 
@@ -166,8 +166,9 @@ export default function BinsPage() {
     setHistoryLoading(true);
     const { data } = await supabase
       .from('trip_bins')
-      .select('id, action, trips(id, vehicle_number, completed_at, driver_id, customers(name), locations(name))')
+      .select('id, action, trips!inner(id, vehicle_number, completed_at, driver_id, customers(name), customer_locations(name))')
       .eq('bin_id', bin.id)
+      .eq('trips.status', 'completed')
       .order('created_at', { ascending: false });
     setHistoryLoading(false);
     if (data) setHistory(data as unknown as BinHistoryEntry[]);
@@ -398,11 +399,11 @@ export default function BinsPage() {
                             <span className="text-xs text-gray-400">{formatDate(entry.trips?.completed_at ?? null)}</span>
                           </div>
                           <div className="text-gray-700 space-y-0.5 mt-1.5">
-                            {entry.trips?.customers && (
-                              <div><span className="text-gray-400">Customer:</span> {entry.trips.customers.name}</div>
-                            )}
-                            {entry.trips?.locations && (
-                              <div><span className="text-gray-400">Dropoff:</span> {entry.trips.locations.name}</div>
+                            {(entry.trips?.customer_locations || entry.trips?.customers) && (
+                              <div>
+                                <span className="text-gray-400">Site:</span>{' '}
+                                {entry.trips.customer_locations?.name ?? entry.trips.customers?.name}
+                              </div>
                             )}
                             {entry.trips?.driver_id && (
                               <div><span className="text-gray-400">Driver:</span> {driverOptions.find(d => d.employee_id === entry.trips!.driver_id)?.name ?? entry.trips.driver_id}</div>
