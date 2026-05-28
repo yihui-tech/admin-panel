@@ -10,14 +10,11 @@ const projectsLinks = [
   { href: '/projects', label: 'Projects' },
   { href: '/assignments', label: 'Assignments' },
   { href: '/timesheets', label: 'Timesheets' },
-  { href: '/cost', label: 'Cost Dashboard' },
 ];
 
 const tripsLinks = [
-  { href: '/trips', label: 'Trips' },
   { href: '/bins', label: 'Bins' },
   { href: '/customers', label: 'Customers' },
-  { href: '/analytics', label: 'Analytics' },
 ];
 
 export default function Nav() {
