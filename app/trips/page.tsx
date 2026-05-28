@@ -418,7 +418,7 @@ export default function TripsPage() {
       } else if (tb.action === 'dropoff') {
         await supabase.from('bins').update({
           customer_location_id: trip.customer_location_id ?? null,
-          customer_id: null,
+          customer_id: trip.customer_location_id ? null : (trip.customer_id ? parseInt(trip.customer_id, 10) : null),
           location_id: null,
         }).eq('id', tb.bin_id);
       }
