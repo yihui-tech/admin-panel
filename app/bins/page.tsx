@@ -36,7 +36,7 @@ type BinForm = {
 
 type BinHistoryEntry = {
   id: string;
-  action: 'pickup' | 'dropoff';
+  action: 'pickup' | 'dropoff' | 'roundtrip';
   trips: {
     id: string;
     vehicle_number: string;
@@ -384,17 +384,17 @@ export default function BinsPage() {
                       <div key={entry.id} className="flex gap-4">
                         {/* Dot */}
                         <div className={`mt-1 w-6 h-6 rounded-full flex items-center justify-center shrink-0 z-10 text-xs font-bold ${
-                          entry.action === 'dropoff' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'
+                          entry.action === 'dropoff' ? 'bg-blue-100 text-blue-700' : entry.action === 'pickup' ? 'bg-orange-100 text-orange-700' : 'bg-purple-100 text-purple-700'
                         }`}>
-                          {entry.action === 'dropoff' ? '↓' : '↑'}
+                          {entry.action === 'dropoff' ? '↓' : entry.action === 'pickup' ? '↑' : '↕'}
                         </div>
 
                         <div className="flex-1 border rounded-lg px-3 py-2.5 text-sm bg-white">
                           <div className="flex items-center justify-between mb-1">
                             <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${
-                              entry.action === 'dropoff' ? 'bg-blue-50 text-blue-700' : 'bg-orange-50 text-orange-700'
+                              entry.action === 'dropoff' ? 'bg-blue-50 text-blue-700' : entry.action === 'pickup' ? 'bg-orange-50 text-orange-700' : 'bg-purple-50 text-purple-700'
                             }`}>
-                              {entry.action === 'dropoff' ? 'Drop off at customer' : 'Pick up from customer'}
+                              {entry.action === 'dropoff' ? 'Drop off at customer' : entry.action === 'pickup' ? 'Pick up from customer' : 'Roundtrip'}
                             </span>
                             <span className="text-xs text-gray-400">{formatDate(entry.trips?.completed_at ?? null)}</span>
                           </div>

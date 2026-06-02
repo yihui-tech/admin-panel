@@ -45,7 +45,7 @@ type CustomerOption = { customer_id: number; name: string; address: string | nul
 type CustomerLocationOption = { id: number; customer_id: number; name: string; address: string | null; contact_person: string | null; contact_number: string | null };
 type LocationOption = { id: number; name: string; address: string | null };
 type BinOption = { id: string; serial_number: string; customer_id: number | null; location_id: number | null; customer_location_id: number | null };
-type BinAction = { bin_id: string; action: 'dropoff' | 'pickup' };
+type BinAction = { bin_id: string; action: 'dropoff' | 'pickup' | 'roundtrip' };
 
 const emptyForm = {
   vehicle_number: '',
@@ -294,7 +294,7 @@ export default function TripsPage() {
       requester: trip.requester ?? '',
       remarks: trip.remarks ?? '',
     });
-    setBinActions(trip.trip_bins.map(tb => ({ bin_id: tb.bin_id, action: tb.action as 'dropoff' | 'pickup' })));
+    setBinActions(trip.trip_bins.map(tb => ({ bin_id: tb.bin_id, action: tb.action as 'dropoff' | 'pickup' | 'roundtrip' })));
     setEditingTrip(trip);
     setShowNewCustomer(false);
     setNewCustomerForm(emptyCustomerForm);
@@ -334,9 +334,13 @@ export default function TripsPage() {
   const binAtCustomer = (bin: BinOption) => !!(bin.customer_id || bin.customer_location_id);
   const binAtYard = (bin: BinOption) => !!(bin.location_id);
 
-  const binActionConflict = (bin_id: string, action: 'dropoff' | 'pickup'): string | null => {
+  const binActionConflict = (bin_id: string, action: 'dropoff' | 'pickup' | 'roundtrip'): string | null => {
     const bin = binOptions.find(b => b.id === bin_id);
     if (!bin) return null;
+    if (action === 'roundtrip') {
+      if (binAtCustomer(bin)) return `Bin ${bin.serial_number} is at a customer site — roundtrip requires bin to start at the yard.`;
+      return null;
+    }
     if (binAtCustomer(bin) && action === 'dropoff')
       return `Bin ${bin.serial_number} is already at a customer site — cannot drop off again. Change action to Pick up.`;
     if (binAtYard(bin) && action === 'pickup')
@@ -409,7 +413,7 @@ export default function TripsPage() {
     if (error) { alert('Error updating trip: ' + error.message); return; }
 
     for (const tb of trip.trip_bins) {
-      if (tb.action === 'pickup') {
+      if (tb.action === 'pickup' || tb.action === 'roundtrip') {
         await supabase.from('bins').update({
           location_id: trip.dropoff_id ? Number(trip.dropoff_id) : null,
           customer_id: null,
@@ -468,7 +472,7 @@ export default function TripsPage() {
     ];
 
     t.trip_bins.forEach(tb => {
-      const label = tb.action === 'dropoff' ? 'Bin drop off' : 'Bin pick up';
+      const label = tb.action === 'dropoff' ? 'Bin drop off' : tb.action === 'pickup' ? 'Bin pick up' : 'Bin roundtrip';
       lines.push(`${label} - ${tb.bins?.serial_number ?? ''}`);
     });
 
@@ -712,11 +716,12 @@ export default function TripsPage() {
                           </select>
                           <select
                             value={ba.action}
-                            onChange={e => setBinActions(prev => prev.map((a, j) => j === i ? { ...a, action: e.target.value as 'dropoff' | 'pickup' } : a))}
+                            onChange={e => setBinActions(prev => prev.map((a, j) => j === i ? { ...a, action: e.target.value as 'dropoff' | 'pickup' | 'roundtrip' } : a))}
                             className={`border rounded px-3 py-2 text-sm ${conflict ? 'border-red-400 bg-red-50' : ''}`}
                           >
                             <option value="dropoff" disabled={!!(selectedBin && binAtCustomer(selectedBin))}>Drop off</option>
                             <option value="pickup" disabled={!!(selectedBin && binAtYard(selectedBin))}>Pick up</option>
+                            <option value="roundtrip" disabled={!!(selectedBin && binAtCustomer(selectedBin))}>Roundtrip</option>
                           </select>
                           <button
                             type="button"

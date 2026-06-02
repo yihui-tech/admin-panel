@@ -37,17 +37,24 @@ Both apps share the same Supabase project per environment. Supabase is the integ
 - Setting `trip_order` for driver list sequencing
 - Adding bins to trips with initial dropoff/pickup actions
 - Generating the WhatsApp dispatch message (admin copies and sends manually to driver)
-- **Bin location update on trip complete** — currently only `handleMarkComplete` in `/trips/page.tsx` updates `bins` table. Target: move to Supabase RPC `complete_trip()` so both apps trigger the same logic
+- **Bin location update on trip complete** — `handleMarkComplete` in `/trips/page.tsx` updates `bins` table
 - Customer, customer_locations, locations, vehicles, drivers master data
 
 ### What trips-records does that affects this app
-- **Driver marks trip complete** → sets `trips.status = 'completed'` and `completed_at`. Does NOT update bin locations (known gap — fixed by planned RPC)
+- **Driver marks trip complete** → sets `trips.status = 'completed'` and `completed_at` only — does NOT update bin locations
+- **trips-records `/admin` marks trip complete** → updates bin locations (same logic as this app)
 - **Driver records weigh_bridge loads** → this app shows net weight breakdown per load on the trips list
 - **Driver can add/edit/delete bin movements** on a trip (same `trip_bins` table) — admin may see different bins than originally set
-- **trips-records `/admin`** is a lightweight admin view of the same trips data — can also create trips, edit, complete, and delete
 
-### Known behavioural gap
-If driver marks a trip complete in trips-records, bin locations are NOT updated (only status changes). Bin locations only update when admin marks complete in this app. The planned `complete_trip()` RPC fixes this by making both apps call the same atomic function.
+### Bin location update rules (both apps)
+
+| Action | Bin location set to |
+|---|---|
+| Issue (dropoff) | `customer_location_id` from trip (falls back to `customer_id`) |
+| Collect (pickup) | `location_id` = trip's `dropoff_id` (yard) |
+| Roundtrip | `location_id` = trip's `dropoff_id` (yard) |
+
+Both apps now apply these rules consistently. `handleMarkComplete` here handles all three action types including roundtrip.
 
 ### Data that flows between apps
 
