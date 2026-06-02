@@ -413,7 +413,7 @@ export default function TripsPage() {
     if (error) { alert('Error updating trip: ' + error.message); return; }
 
     for (const tb of trip.trip_bins) {
-      if (tb.action === 'pickup') {
+      if (tb.action === 'pickup' || tb.action === 'roundtrip') {
         await supabase.from('bins').update({
           location_id: trip.dropoff_id ? Number(trip.dropoff_id) : null,
           customer_id: null,
