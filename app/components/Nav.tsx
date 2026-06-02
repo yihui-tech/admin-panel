@@ -2,11 +2,9 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { FolderKanban, Truck } from 'lucide-react';
 import { createBrowserClient } from '@supabase/ssr';
-import { supabase } from '../lib/supabase';
 
 const projectsLinks = [
   { href: '/projects', label: 'Projects' },
@@ -25,29 +23,14 @@ const tripsLinks = [
 export default function Nav() {
   const pathname = usePathname();
   const router = useRouter();
-  const [isSuper, setIsSuper] = useState(false);
 
-  const authClient = createBrowserClient(
+  const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
 
-  useEffect(() => {
-    const check = async () => {
-      const { data: { user } } = await authClient.auth.getUser();
-      if (!user) return;
-      const { data } = await supabase
-        .from('user_profiles')
-        .select('is_superadmin')
-        .eq('user_id', user.id)
-        .single();
-      setIsSuper(data?.is_superadmin ?? false);
-    };
-    check();
-  }, []);
-
   const handleSignOut = async () => {
-    await authClient.auth.signOut();
+    await supabase.auth.signOut();
     router.push('/login');
     router.refresh();
   };
@@ -85,7 +68,6 @@ export default function Nav() {
         <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Trips</span>
       </div>
       {tripsLinks.map(l => navLink(l.href, l.label))}
-      {isSuper && navLink('/staff', 'Staff')}
 
       <div className="ml-auto">
         <button
