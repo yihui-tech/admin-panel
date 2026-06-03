@@ -16,6 +16,7 @@ type TripReport = {
   id: string;
   trip_type: string | null;
   completed_at: string;
+  vehicle_number: string | null;
   customer_id: number | null;
   outbound_location_id: number | null;
   customers: { name: string } | null;
@@ -39,11 +40,20 @@ type MaterialFilter = null | 'inbound' | 'outbound' | number;
 const formatKg = (val: number) =>
   `${val.toLocaleString('en-SG', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg`;
 
+const formatDate = (iso: string) =>
+  new Date(iso).toLocaleDateString('en-SG', { day: '2-digit', month: 'short', year: 'numeric' });
+
 const parseMaterialFilter = (val: string): MaterialFilter => {
   if (!val) return null;
   if (val === 'inbound' || val === 'outbound') return val;
   return Number(val);
 };
+
+const tripNetWeight = (trip: TripReport) =>
+  trip.weigh_bridge.reduce((sum, wb) => {
+    const net = Math.abs(wb.net_weight ?? 0);
+    return sum + (trip.trip_type === 'outbound' ? net : net - (wb.rubbish_weight ?? 0));
+  }, 0);
 
 const today = new Date();
 const defaultFrom = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
@@ -78,6 +88,7 @@ export default function ReportingPage() {
         id,
         trip_type,
         completed_at,
+        vehicle_number,
         customer_id,
         outbound_location_id,
         customers(name),
@@ -93,6 +104,25 @@ export default function ReportingPage() {
       });
   }, [fromDate, toDate]);
 
+  // Shared filter predicate used by both stats cards and trip table
+  const matchesMaterialFilter = (trip: TripReport): WeighBridgeRecord[] | null => {
+    const isOutboundTrip = trip.trip_type === 'outbound';
+    if (materialFilter === 'inbound' && isOutboundTrip) return null;
+    if (materialFilter === 'outbound' && !isOutboundTrip) return null;
+    let wbs = trip.weigh_bridge;
+    if (typeof materialFilter === 'number') {
+      const mat = materialTypes.find(m => m.id === materialFilter);
+      if (mat) {
+        wbs = mat.category === 'inbound'
+          ? wbs.filter(w => w.material_type_ids?.includes(materialFilter) ?? false)
+          : wbs.filter(w => w.outbound_material_type_ids?.includes(materialFilter) ?? false);
+      }
+      if (wbs.length === 0) return null;
+    }
+    return wbs;
+  };
+
+  // Summary cards: company filter excludes outbound trips when a company is selected
   const stats = useMemo(() => {
     let totalTrips = 0;
     let inboundNet = 0;
@@ -103,29 +133,16 @@ export default function ReportingPage() {
     for (const trip of trips) {
       if (customerFilter !== null && trip.customer_id !== customerFilter) continue;
 
-      const isOutboundTrip = trip.trip_type === 'outbound';
-
-      if (materialFilter === 'inbound' && isOutboundTrip) continue;
-      if (materialFilter === 'outbound' && !isOutboundTrip) continue;
-
-      let wbs: WeighBridgeRecord[] = trip.weigh_bridge;
-      if (typeof materialFilter === 'number') {
-        const mat = materialTypes.find(m => m.id === materialFilter);
-        if (mat) {
-          wbs = mat.category === 'inbound'
-            ? wbs.filter(w => w.material_type_ids?.includes(materialFilter) ?? false)
-            : wbs.filter(w => w.outbound_material_type_ids?.includes(materialFilter) ?? false);
-        }
-        if (wbs.length === 0) continue;
-      }
+      const wbs = matchesMaterialFilter(trip);
+      if (wbs === null) continue;
 
       totalTrips++;
+      const isOutboundTrip = trip.trip_type === 'outbound';
 
       for (const wb of wbs) {
         const net = Math.abs(wb.net_weight ?? 0);
         const rubbish = wb.rubbish_weight ?? 0;
         const foc = wb.foc_weight ?? 0;
-
         if (isOutboundTrip) {
           const key = String(trip.outbound_location_id ?? 'unknown');
           const name = trip.outbound_locations?.name ?? 'Unknown destination';
@@ -134,15 +151,24 @@ export default function ReportingPage() {
         } else {
           inboundNet += net - rubbish;
         }
-
         focTotal += foc;
         rubbishTotal += rubbish;
       }
     }
 
-    const outboundRows = Object.values(outboundByDest).sort((a, b) => b.weight - a.weight);
-    const outboundTotal = outboundRows.reduce((s, r) => s + r.weight, 0);
-    return { totalTrips, inboundNet, focTotal, rubbishTotal, outboundRows, outboundTotal };
+    const outboundTotal = Object.values(outboundByDest).reduce((s, r) => s + r.weight, 0);
+    return { totalTrips, inboundNet, focTotal, rubbishTotal, outboundTotal };
+  }, [trips, materialFilter, customerFilter, materialTypes]);
+
+  // Trip list: company filter shows matching company trips AND all outbound trips
+  const tripRows = useMemo(() => {
+    return trips
+      .filter(trip => {
+        const isOutboundTrip = trip.trip_type === 'outbound';
+        if (customerFilter !== null && !isOutboundTrip && trip.customer_id !== customerFilter) return false;
+        return matchesMaterialFilter(trip) !== null;
+      })
+      .sort((a, b) => new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime());
   }, [trips, materialFilter, customerFilter, materialTypes]);
 
   const inboundMaterials = materialTypes.filter(m => m.category === 'inbound');
@@ -234,35 +260,53 @@ export default function ReportingPage() {
         </div>
       </div>
 
-      {/* Outbound by destination */}
+      {/* Trip list */}
       <div className="bg-white border rounded-lg overflow-hidden">
         <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-700">Outbound Goods by Destination</h2>
-          {stats.outboundRows.length > 0 && (
-            <span className="text-sm font-semibold text-gray-900">{formatKg(stats.outboundTotal)} total</span>
-          )}
+          <h2 className="text-sm font-semibold text-gray-700">Trips</h2>
+          <span className="text-sm text-gray-500">{tripRows.length} trips</span>
         </div>
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b">
             <tr>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Destination</th>
-              <th className="text-right px-4 py-3 font-medium text-gray-600">Weight</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Date</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Type</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Company / Destination</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Vehicle</th>
+              <th className="text-right px-4 py-3 font-medium text-gray-600">Net Weight</th>
             </tr>
           </thead>
           <tbody>
-            {stats.outboundRows.length === 0 ? (
+            {tripRows.length === 0 ? (
               <tr>
-                <td colSpan={2} className="text-center px-4 py-6 text-gray-400">
-                  No outbound data for this period
+                <td colSpan={5} className="text-center px-4 py-6 text-gray-400">
+                  No trips for this period
                 </td>
               </tr>
             ) : (
-              stats.outboundRows.map((row, i) => (
-                <tr key={i} className="border-b last:border-0 hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium">{row.name}</td>
-                  <td className="px-4 py-3 text-right text-gray-700">{formatKg(row.weight)}</td>
-                </tr>
-              ))
+              tripRows.map(trip => {
+                const isOutbound = trip.trip_type === 'outbound';
+                const weight = tripNetWeight(trip);
+                return (
+                  <tr key={trip.id} className="border-b last:border-0 hover:bg-gray-50">
+                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{formatDate(trip.completed_at)}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${isOutbound ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                        {isOutbound ? 'Outbound' : 'Collection'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 font-medium">
+                      {isOutbound
+                        ? (trip.outbound_locations?.name ?? '—')
+                        : (trip.customers?.name ?? '—')}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">{trip.vehicle_number ?? '—'}</td>
+                    <td className="px-4 py-3 text-right text-gray-700">
+                      {weight > 0 ? formatKg(weight) : <span className="text-gray-400">—</span>}
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
