@@ -96,6 +96,7 @@ export default function BinsPage() {
   const [locationFilter, setLocationFilter] = useState<'all' | 'customer' | 'yard' | 'unknown'>('all');
   const [typeFilter, setTypeFilter] = useState('');
   const [sizeFilter, setSizeFilter] = useState('');
+  const [sortDays, setSortDays] = useState<'asc' | 'desc' | null>(null);
 
   const [historyBin, setHistoryBin] = useState<Bin | null>(null);
   const [history, setHistory] = useState<BinHistoryEntry[]>([]);
@@ -114,15 +115,16 @@ export default function BinsPage() {
     if (customerBinIds.length > 0) {
       const { data: dropoffs } = await supabase
         .from('trip_bins')
-        .select('bin_id, trips!inner(completed_at)')
+        .select('bin_id, trips!inner(completed_at, trip_date)')
         .eq('action', 'dropoff')
         .eq('trips.status', 'completed')
         .in('bin_id', customerBinIds)
         .order('trips(completed_at)', { ascending: false });
       if (dropoffs) {
-        for (const row of dropoffs as unknown as { bin_id: string; trips: { completed_at: string | null } }[]) {
-          if (!lastDropoffMap[row.bin_id] && row.trips?.completed_at) {
-            lastDropoffMap[row.bin_id] = row.trips.completed_at;
+        for (const row of dropoffs as unknown as { bin_id: string; trips: { completed_at: string | null; trip_date: string | null } }[]) {
+          if (!lastDropoffMap[row.bin_id]) {
+            const ref = row.trips?.trip_date ?? row.trips?.completed_at;
+            if (ref) lastDropoffMap[row.bin_id] = ref;
           }
         }
       }
@@ -219,6 +221,18 @@ export default function BinsPage() {
   const typeOptions = Array.from(new Set(bins.map(b => b.type).filter(Boolean))) as string[];
   const sizeOptions = Array.from(new Set(bins.map(b => b.size).filter(Boolean))) as string[];
 
+  const daysAtSiteNum = (bin: Bin): number | null => {
+    if (!bin.customer_location_id && !bin.customer_id) return null;
+    if (!bin.last_dropoff_at) return null;
+    return Math.floor((Date.now() - new Date(bin.last_dropoff_at).getTime()) / 86_400_000);
+  };
+
+  const daysAtSite = (bin: Bin): string | null => {
+    const days = daysAtSiteNum(bin);
+    if (days === null) return null;
+    return days === 0 ? 'Today' : days === 1 ? '1 day' : `${days} days`;
+  };
+
   const filteredBins = bins.filter(bin => {
     if (locationFilter === 'customer' && !bin.customer_id && !bin.customer_location_id) return false;
     if (locationFilter === 'yard' && !bin.location_id) return false;
@@ -226,14 +240,12 @@ export default function BinsPage() {
     if (typeFilter && bin.type !== typeFilter) return false;
     if (sizeFilter && bin.size !== sizeFilter) return false;
     return true;
+  }).sort((a, b) => {
+    if (!sortDays) return 0;
+    const da = daysAtSiteNum(a) ?? -1;
+    const db = daysAtSiteNum(b) ?? -1;
+    return sortDays === 'asc' ? da - db : db - da;
   });
-
-  const daysAtSite = (bin: Bin): string | null => {
-    if (!bin.customer_location_id && !bin.customer_id) return null;
-    if (!bin.last_dropoff_at) return null;
-    const days = Math.floor((Date.now() - new Date(bin.last_dropoff_at).getTime()) / 86_400_000);
-    return days === 0 ? 'Today' : days === 1 ? '1 day' : `${days} days`;
-  };
 
   const currentLocation = (bin: Bin) => {
     if (bin.customer_locations) {
@@ -305,11 +317,19 @@ export default function BinsPage() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b">
             <tr>
-              <th className="text-left px-4 py-3 font-medium">Serial Number</th>
+              <th className="text-left px-4 py-3 font-medium">Bin No.</th>
               <th className="text-left px-4 py-3 font-medium">Type</th>
               <th className="text-left px-4 py-3 font-medium">Size</th>
               <th className="text-left px-4 py-3 font-medium">Current Location</th>
-              <th className="text-left px-4 py-3 font-medium">Days at Site</th>
+              <th className="text-left px-4 py-3 font-medium whitespace-nowrap">
+                <button
+                  onClick={() => setSortDays(s => s === 'asc' ? 'desc' : s === 'desc' ? null : 'asc')}
+                  className="flex items-center gap-1 hover:text-blue-600"
+                >
+                  Days at Site
+                  <span className="text-gray-400 text-xs">{sortDays === 'asc' ? '↑' : sortDays === 'desc' ? '↓' : '↕'}</span>
+                </button>
+              </th>
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
@@ -335,7 +355,7 @@ export default function BinsPage() {
                       {loc.value}
                     </span>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 whitespace-nowrap">
                     {days ? (
                       <span className={`text-xs font-medium px-2 py-1 rounded ${
                         days === 'Today' ? 'bg-green-50 text-green-700' :
