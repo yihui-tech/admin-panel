@@ -15,6 +15,8 @@ const projectsLinks = [
 const tripsLinks = [
   { href: '/bins', label: 'Bins' },
   { href: '/customers', label: 'Customers' },
+  { href: '/analytics', label: 'Analytics' },
+  { href: '/reporting', label: 'Reporting' },
 ];
 
 export default function Nav() {
