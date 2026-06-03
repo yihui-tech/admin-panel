@@ -321,7 +321,7 @@ export default function BinsPage() {
               <th className="text-left px-4 py-3 font-medium">Type</th>
               <th className="text-left px-4 py-3 font-medium">Size</th>
               <th className="text-left px-4 py-3 font-medium">Current Location</th>
-              <th className="text-left px-4 py-3 font-medium">
+              <th className="text-left px-4 py-3 font-medium whitespace-nowrap">
                 <button
                   onClick={() => setSortDays(s => s === 'asc' ? 'desc' : s === 'desc' ? null : 'asc')}
                   className="flex items-center gap-1 hover:text-blue-600"
