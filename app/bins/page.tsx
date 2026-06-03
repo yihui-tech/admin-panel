@@ -114,15 +114,16 @@ export default function BinsPage() {
     if (customerBinIds.length > 0) {
       const { data: dropoffs } = await supabase
         .from('trip_bins')
-        .select('bin_id, trips!inner(completed_at)')
+        .select('bin_id, trips!inner(completed_at, trip_date)')
         .eq('action', 'dropoff')
         .eq('trips.status', 'completed')
         .in('bin_id', customerBinIds)
         .order('trips(completed_at)', { ascending: false });
       if (dropoffs) {
-        for (const row of dropoffs as unknown as { bin_id: string; trips: { completed_at: string | null } }[]) {
-          if (!lastDropoffMap[row.bin_id] && row.trips?.completed_at) {
-            lastDropoffMap[row.bin_id] = row.trips.completed_at;
+        for (const row of dropoffs as unknown as { bin_id: string; trips: { completed_at: string | null; trip_date: string | null } }[]) {
+          if (!lastDropoffMap[row.bin_id]) {
+            const ref = row.trips?.trip_date ?? row.trips?.completed_at;
+            if (ref) lastDropoffMap[row.bin_id] = ref;
           }
         }
       }
