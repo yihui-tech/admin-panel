@@ -189,8 +189,9 @@ All routes are protected by `middleware.ts` using `@supabase/ssr`:
 
 ### /bins
 - Full CRUD via modal: serial number, type, size, unit weight, status, remarks, location
-- Filter tabs: All / At Customer / At Yard / Unknown
-- **Days at Site** — elapsed time since last dropoff, colour-coded: green = today, gray = <7d, orange = 7–13d, red = 14+d
+- Filter tabs: All / At Customer / At Yard / Unknown — each tab shows a live count e.g. `All (42)`
+- **Days at Site** — elapsed days since the most recent completed dropoff trip's `trip_date` (falls back to `completed_at` for legacy trips); sortable asc/desc by clicking the column header
+- Colour coding: green = today, gray = <7d, orange = 7–13d, red = 14+d
 - Location badge: blue = customer site, green = yard, gray = unknown
 
 ### /customers
