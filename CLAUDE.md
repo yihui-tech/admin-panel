@@ -113,6 +113,8 @@ app/
     page.tsx                    # Customer CRUD + multi-site management
   projects/
     page.tsx                    # Project CRUD
+  reporting/
+    page.tsx                    # Trip weight reporting — date range + material filter, weight summaries
   timesheets/
     page.tsx                    # Timesheet entry per worker per project
   trips/
@@ -197,6 +199,15 @@ All routes are protected by `middleware.ts` using `@supabase/ssr`:
 
 ### /analytics
 - Bin swap analytics: dropoff counts per customer site, week/month toggle, bar chart
+
+### /reporting
+- Date range filter (from/to, defaults to current month) + material type filter
+- Material filter options: All | All Inbound | All Outbound | specific material (grouped by category)
+- **Summary cards:** Total Trips, Inbound Net weight (after rubbish deduction), Outbound Net weight, FOC weight, Rubbish weight
+- **Outbound by Destination table:** one row per `outbound_location_id`, sorted by weight descending
+- Data: fetches all completed trips, filters by date client-side using `COALESCE(trip_date, created_at)` — trips without `trip_date` fall back to `created_at` date
+- Outbound `net_weight` is stored negative in DB (weigh bridge convention); use `Math.abs()` when displaying
+- All aggregation is client-side; **tech debt:** migrate to a Supabase RPC as data volume grows (~70 trips/day across 2 yards)
 
 ---
 
