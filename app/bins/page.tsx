@@ -320,7 +320,7 @@ export default function BinsPage() {
               <th className="text-left px-4 py-3 font-medium">Bin No.</th>
               <th className="text-left px-4 py-3 font-medium">Type</th>
               <th className="text-left px-4 py-3 font-medium">Size</th>
-              <th className="text-left px-4 py-3 font-medium w-48">Current Location</th>
+              <th className="text-left px-4 py-3 font-medium">Current Location</th>
               <th className="text-left px-4 py-3 font-medium">
                 <button
                   onClick={() => setSortDays(s => s === 'asc' ? 'desc' : s === 'desc' ? null : 'asc')}
@@ -349,10 +349,10 @@ export default function BinsPage() {
                   <td className="px-4 py-3 font-medium">{bin.serial_number}</td>
                   <td className="px-4 py-3 text-gray-600">{bin.type ?? '—'}</td>
                   <td className="px-4 py-3 text-gray-600">{bin.size ?? '—'}</td>
-                  <td className="px-4 py-3 w-48">
-                    <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium ${loc.color} max-w-full`}>
+                  <td className="px-4 py-3 max-w-[200px]">
+                    <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium ${loc.color}`}>
                       <span className="text-gray-400 font-normal shrink-0">{loc.label}:</span>
-                      <span className="truncate">{loc.value}</span>
+                      <span className="truncate max-w-[140px]">{loc.value}</span>
                     </span>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
