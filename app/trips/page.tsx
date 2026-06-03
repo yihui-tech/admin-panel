@@ -31,6 +31,7 @@ type Trip = {
   remarks: string | null;
   status: string;
   trip_order: number | null;
+  trip_date: string | null;
   created_at: string;
   completed_at: string | null;
   customers: { name: string; address: string | null; contact_person: string | null; contact_number: string | null } | null;
@@ -145,7 +146,7 @@ function SortableTripRow({
       <td className="px-4 py-3">
         <span className={statusBadge(trip.status)}>{trip.status}</span>
       </td>
-      <td className="px-4 py-3 text-gray-500 text-xs">{formatDate(trip.completed_at ?? trip.created_at)}</td>
+      <td className="px-4 py-3 text-gray-500 text-xs">{formatDate(trip.trip_date ?? trip.created_at)}</td>
       <td className="px-4 py-3">
         <div className="flex items-center justify-end gap-3">
           {trip.status === 'open' && (
@@ -208,7 +209,7 @@ export default function TripsPage() {
   const fetchTrips = async () => {
     const { data } = await supabase
       .from('trips')
-      .select('id, vehicle_number, driver_id, customer_id, customer_location_id, dropoff_id, requester, remarks, status, trip_order, created_at, completed_at, customers(name, address, contact_person, contact_number), customer_locations(name, address, contact_person, contact_number), locations(name, address), weigh_bridge(net_weight), trip_bins(id, bin_id, action, bins(serial_number))')
+      .select('id, vehicle_number, driver_id, customer_id, customer_location_id, dropoff_id, requester, remarks, status, trip_order, trip_date, created_at, completed_at, customers(name, address, contact_person, contact_number), customer_locations(name, address, contact_person, contact_number), locations(name, address), weigh_bridge(net_weight), trip_bins(id, bin_id, action, bins(serial_number))')
       .order('created_at', { ascending: false });
     if (data) setTrips(data as unknown as Trip[]);
   };
@@ -240,7 +241,7 @@ export default function TripsPage() {
   const filteredTrips = trips
     .filter(t => {
       if (driverFilter && t.driver_id !== driverFilter) return false;
-      if (dateFilter && (t.completed_at ?? t.created_at).slice(0, 10) !== dateFilter) return false;
+      if (dateFilter && (t.trip_date ?? t.created_at).slice(0, 10) !== dateFilter) return false;
       return true;
     })
     .sort((a, b) => {
@@ -448,7 +449,7 @@ export default function TripsPage() {
   };
 
   const generateMessage = (t: Trip) => {
-    const date = new Date(t.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const date = new Date(t.trip_date ?? t.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
     const loc = t.customer_locations;
     const pickupName = loc ? `${t.customers?.name ?? ''} (${loc.name})` : (t.customers?.name ?? '');
     const pickupAddress = loc?.address ?? t.customers?.address ?? '';
