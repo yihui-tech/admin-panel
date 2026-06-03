@@ -133,7 +133,7 @@ export default function ReportingPage() {
     return trips.filter(trip => {
       if (!withinRange(trip)) return false;
       const isOutbound = trip.trip_type === 'outbound';
-      if (customerFilter !== null && !isOutbound && trip.customer_id !== customerFilter) return false;
+      if (customerFilter !== null && trip.customer_id !== customerFilter) return false;
       return matchesMaterialFilter(trip) !== null;
     });
   }, [trips, materialFilter, customerFilter, materialTypes, fromDate, toDate]);
