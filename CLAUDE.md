@@ -41,8 +41,8 @@ Both apps share the same Supabase project per environment. Supabase is the integ
 - Customer, customer_locations, locations, vehicles, drivers master data
 
 ### What trips-records does that affects this app
-- **Driver marks trip complete** → sets `trips.status = 'completed'` and `completed_at` only — does NOT update bin locations
-- **trips-records `/admin` marks trip complete** → updates bin locations (same logic as this app)
+- **Driver marks trip complete** → sets `trips.status = 'completed'`, `completed_at`, and updates bin locations
+- **trips-records `/admin` marks trip complete** → also updates bin locations
 - **Driver records weigh_bridge loads** → this app shows net weight breakdown per load on the trips list
 - **Driver can add/edit/delete bin movements** on a trip (same `trip_bins` table) — admin may see different bins than originally set
 
@@ -201,12 +201,15 @@ All routes are protected by `middleware.ts` using `@supabase/ssr`:
 - Bin swap analytics: dropoff counts per customer site, week/month toggle, bar chart
 
 ### /reporting
-- Date range filter (from/to, defaults to current month) + material type filter
+- Filters: date range (from/to, defaults to current month), company dropdown, material type dropdown
 - Material filter options: All | All Inbound | All Outbound | specific material (grouped by category)
 - **Summary cards:** Total Trips, Inbound Net weight (after rubbish deduction), Outbound Net weight, FOC weight, Rubbish weight
-- **Outbound by Destination table:** one row per `outbound_location_id`, sorted by weight descending
-- Data: fetches all completed trips, filters by date client-side using `COALESCE(trip_date, created_at)` — trips without `trip_date` fall back to `created_at` date
+- **Table — two modes depending on company filter:**
+  - *All companies:* grouped by date + company/destination — shows trip count and total net weight per group, sorted latest first
+  - *Specific company:* one row per individual trip (Date, Type, Company/Destination, Vehicle, Net Weight) — outbound trips are excluded since they have no customer
+- Data: fetches all completed trips on mount; date filtering is client-side using `trip_date ?? created_at.slice(0, 10)`
 - Outbound `net_weight` is stored negative in DB (weigh bridge convention); use `Math.abs()` when displaying
+- All aggregation is client-side; **tech debt:** migrate to a Supabase RPC as data volume grows (~70 trips/day across 2 yards)
 - All aggregation is client-side; **tech debt:** migrate to a Supabase RPC as data volume grows (~70 trips/day across 2 yards)
 
 ---
