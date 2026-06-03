@@ -221,6 +221,18 @@ export default function BinsPage() {
   const typeOptions = Array.from(new Set(bins.map(b => b.type).filter(Boolean))) as string[];
   const sizeOptions = Array.from(new Set(bins.map(b => b.size).filter(Boolean))) as string[];
 
+  const daysAtSiteNum = (bin: Bin): number | null => {
+    if (!bin.customer_location_id && !bin.customer_id) return null;
+    if (!bin.last_dropoff_at) return null;
+    return Math.floor((Date.now() - new Date(bin.last_dropoff_at).getTime()) / 86_400_000);
+  };
+
+  const daysAtSite = (bin: Bin): string | null => {
+    const days = daysAtSiteNum(bin);
+    if (days === null) return null;
+    return days === 0 ? 'Today' : days === 1 ? '1 day' : `${days} days`;
+  };
+
   const filteredBins = bins.filter(bin => {
     if (locationFilter === 'customer' && !bin.customer_id && !bin.customer_location_id) return false;
     if (locationFilter === 'yard' && !bin.location_id) return false;
@@ -234,18 +246,6 @@ export default function BinsPage() {
     const db = daysAtSiteNum(b) ?? -1;
     return sortDays === 'asc' ? da - db : db - da;
   });
-
-  const daysAtSiteNum = (bin: Bin): number | null => {
-    if (!bin.customer_location_id && !bin.customer_id) return null;
-    if (!bin.last_dropoff_at) return null;
-    return Math.floor((Date.now() - new Date(bin.last_dropoff_at).getTime()) / 86_400_000);
-  };
-
-  const daysAtSite = (bin: Bin): string | null => {
-    const days = daysAtSiteNum(bin);
-    if (days === null) return null;
-    return days === 0 ? 'Today' : days === 1 ? '1 day' : `${days} days`;
-  };
 
   const currentLocation = (bin: Bin) => {
     if (bin.customer_locations) {
