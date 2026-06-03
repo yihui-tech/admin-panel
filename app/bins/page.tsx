@@ -96,6 +96,7 @@ export default function BinsPage() {
   const [locationFilter, setLocationFilter] = useState<'all' | 'customer' | 'yard' | 'unknown'>('all');
   const [typeFilter, setTypeFilter] = useState('');
   const [sizeFilter, setSizeFilter] = useState('');
+  const [sortDays, setSortDays] = useState<'asc' | 'desc' | null>(null);
 
   const [historyBin, setHistoryBin] = useState<Bin | null>(null);
   const [history, setHistory] = useState<BinHistoryEntry[]>([]);
@@ -227,12 +228,22 @@ export default function BinsPage() {
     if (typeFilter && bin.type !== typeFilter) return false;
     if (sizeFilter && bin.size !== sizeFilter) return false;
     return true;
+  }).sort((a, b) => {
+    if (!sortDays) return 0;
+    const da = daysAtSiteNum(a) ?? -1;
+    const db = daysAtSiteNum(b) ?? -1;
+    return sortDays === 'asc' ? da - db : db - da;
   });
 
-  const daysAtSite = (bin: Bin): string | null => {
+  const daysAtSiteNum = (bin: Bin): number | null => {
     if (!bin.customer_location_id && !bin.customer_id) return null;
     if (!bin.last_dropoff_at) return null;
-    const days = Math.floor((Date.now() - new Date(bin.last_dropoff_at).getTime()) / 86_400_000);
+    return Math.floor((Date.now() - new Date(bin.last_dropoff_at).getTime()) / 86_400_000);
+  };
+
+  const daysAtSite = (bin: Bin): string | null => {
+    const days = daysAtSiteNum(bin);
+    if (days === null) return null;
     return days === 0 ? 'Today' : days === 1 ? '1 day' : `${days} days`;
   };
 
@@ -310,7 +321,15 @@ export default function BinsPage() {
               <th className="text-left px-4 py-3 font-medium">Type</th>
               <th className="text-left px-4 py-3 font-medium">Size</th>
               <th className="text-left px-4 py-3 font-medium">Current Location</th>
-              <th className="text-left px-4 py-3 font-medium">Days at Site</th>
+              <th className="text-left px-4 py-3 font-medium">
+                <button
+                  onClick={() => setSortDays(s => s === 'asc' ? 'desc' : s === 'desc' ? null : 'asc')}
+                  className="flex items-center gap-1 hover:text-blue-600"
+                >
+                  Days at Site
+                  <span className="text-gray-400 text-xs">{sortDays === 'asc' ? '↑' : sortDays === 'desc' ? '↓' : '↕'}</span>
+                </button>
+              </th>
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
