@@ -317,7 +317,7 @@ export default function BinsPage() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b">
             <tr>
-              <th className="text-left px-4 py-3 font-medium">Serial Number</th>
+              <th className="text-left px-4 py-3 font-medium">Bin No.</th>
               <th className="text-left px-4 py-3 font-medium">Type</th>
               <th className="text-left px-4 py-3 font-medium">Size</th>
               <th className="text-left px-4 py-3 font-medium">Current Location</th>
@@ -355,7 +355,7 @@ export default function BinsPage() {
                       {loc.value}
                     </span>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 whitespace-nowrap">
                     {days ? (
                       <span className={`text-xs font-medium px-2 py-1 rounded ${
                         days === 'Today' ? 'bg-green-50 text-green-700' :
