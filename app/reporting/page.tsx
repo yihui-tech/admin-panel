@@ -15,9 +15,10 @@ type WeighBridgeRecord = {
 type TripReport = {
   id: string;
   trip_type: string | null;
-  trip_date: string | null;
-  created_at: string;
+  completed_at: string;
+  customer_id: number | null;
   outbound_location_id: number | null;
+  customers: { name: string } | null;
   outbound_locations: { name: string } | null;
   weigh_bridge: WeighBridgeRecord[];
 };
@@ -26,6 +27,11 @@ type MaterialType = {
   id: number;
   name: string;
   category: string;
+};
+
+type CustomerOption = {
+  customer_id: number;
+  name: string;
 };
 
 type MaterialFilter = null | 'inbound' | 'outbound' | number;
@@ -47,17 +53,20 @@ export default function ReportingPage() {
   const [fromDate, setFromDate] = useState(defaultFrom);
   const [toDate, setToDate] = useState(defaultTo);
   const [materialFilter, setMaterialFilter] = useState<MaterialFilter>(null);
+  const [customerFilter, setCustomerFilter] = useState<number | null>(null);
   const [trips, setTrips] = useState<TripReport[]>([]);
   const [materialTypes, setMaterialTypes] = useState<MaterialType[]>([]);
+  const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    supabase
-      .from('material_types')
-      .select('id, name, category')
-      .order('category')
-      .order('name')
-      .then(({ data }) => { if (data) setMaterialTypes(data); });
+    Promise.all([
+      supabase.from('material_types').select('id, name, category').order('category').order('name'),
+      supabase.from('customers').select('customer_id, name').order('name'),
+    ]).then(([matRes, custRes]) => {
+      if (matRes.data) setMaterialTypes(matRes.data);
+      if (custRes.data) setCustomers(custRes.data);
+    });
   }, []);
 
   useEffect(() => {
@@ -68,13 +77,16 @@ export default function ReportingPage() {
       .select(`
         id,
         trip_type,
-        trip_date,
-        created_at,
+        completed_at,
+        customer_id,
         outbound_location_id,
+        customers(name),
         outbound_locations(name),
         weigh_bridge(id, net_weight, rubbish_weight, foc_weight, material_type_ids, outbound_material_type_ids)
       `)
       .eq('status', 'completed')
+      .gte('completed_at', fromDate + 'T00:00:00+08:00')
+      .lte('completed_at', toDate + 'T23:59:59+08:00')
       .then(({ data }) => {
         if (data) setTrips(data as unknown as TripReport[]);
         setLoading(false);
@@ -89,9 +101,7 @@ export default function ReportingPage() {
     const outboundByDest: Record<string, { name: string; weight: number }> = {};
 
     for (const trip of trips) {
-      // Use trip_date when set; fall back to created_at date for older trips
-      const effectiveDate = trip.trip_date ?? trip.created_at.slice(0, 10);
-      if (effectiveDate < fromDate || effectiveDate > toDate) continue;
+      if (customerFilter !== null && trip.customer_id !== customerFilter) continue;
 
       const isOutboundTrip = trip.trip_type === 'outbound';
 
@@ -133,7 +143,7 @@ export default function ReportingPage() {
     const outboundRows = Object.values(outboundByDest).sort((a, b) => b.weight - a.weight);
     const outboundTotal = outboundRows.reduce((s, r) => s + r.weight, 0);
     return { totalTrips, inboundNet, focTotal, rubbishTotal, outboundRows, outboundTotal };
-  }, [trips, materialFilter, materialTypes]);
+  }, [trips, materialFilter, customerFilter, materialTypes]);
 
   const inboundMaterials = materialTypes.filter(m => m.category === 'inbound');
   const outboundMaterials = materialTypes.filter(m => m.category === 'outbound');
@@ -161,6 +171,17 @@ export default function ReportingPage() {
             onChange={e => setToDate(e.target.value)}
             className="border rounded px-3 py-2 text-sm"
           />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Company</label>
+          <select
+            value={customerFilter ?? ''}
+            onChange={e => setCustomerFilter(e.target.value ? Number(e.target.value) : null)}
+            className="border rounded px-3 py-2 text-sm min-w-[180px]"
+          >
+            <option value="">All companies</option>
+            {customers.map(c => <option key={c.customer_id} value={c.customer_id}>{c.name}</option>)}
+          </select>
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Material</label>
