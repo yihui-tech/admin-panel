@@ -209,6 +209,13 @@ export default function BinsPage() {
     else alert('Error deleting bin: ' + error.message);
   };
 
+  const tabCounts = {
+    all: bins.length,
+    customer: bins.filter(b => b.customer_id || b.customer_location_id).length,
+    yard: bins.filter(b => !b.customer_id && !b.customer_location_id && b.location_id).length,
+    unknown: bins.filter(b => !b.customer_id && !b.customer_location_id && !b.location_id).length,
+  };
+
   const typeOptions = Array.from(new Set(bins.map(b => b.type).filter(Boolean))) as string[];
   const sizeOptions = Array.from(new Set(bins.map(b => b.size).filter(Boolean))) as string[];
 
@@ -266,7 +273,7 @@ export default function BinsPage() {
               onClick={() => setLocationFilter(val)}
               className={`px-4 py-2 text-sm font-medium ${locationFilter === val ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
             >
-              {label}
+              {label} <span className={`ml-1 text-xs font-normal ${locationFilter === val ? 'text-blue-200' : 'text-gray-400'}`}>({tabCounts[val]})</span>
             </button>
           ))}
         </div>
