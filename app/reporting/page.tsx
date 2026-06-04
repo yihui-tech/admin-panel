@@ -112,7 +112,16 @@ export default function ReportingPage() {
       `)
       .eq('status', 'completed')
       .then(({ data }) => {
-        if (data) setTrips(data as unknown as TripReport[]);
+        if (data) {
+          setTrips(data as unknown as TripReport[]);
+          const sample = (data as any[]).slice(0, 3);
+          console.log('[report] sample trips:', sample.map((t: any) => ({
+            id: t.id.slice(0, 8),
+            trip_type: t.trip_type,
+            dropoff_id: t.dropoff_id,
+            source_location_id: t.source_location_id,
+          })));
+        }
         setLoading(false);
       });
   }, [fromDate, toDate]);
