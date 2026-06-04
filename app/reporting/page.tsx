@@ -111,17 +111,9 @@ export default function ReportingPage() {
         weigh_bridge(id, net_weight, rubbish_weight, foc_weight, material_type_ids, outbound_material_type_ids)
       `)
       .eq('status', 'completed')
-      .then(({ data }) => {
-        if (data) {
-          setTrips(data as unknown as TripReport[]);
-          const sample = (data as any[]).slice(0, 3);
-          console.log('[report] sample trips:', sample.map((t: any) => ({
-            id: t.id.slice(0, 8),
-            trip_type: t.trip_type,
-            dropoff_id: t.dropoff_id,
-            source_location_id: t.source_location_id,
-          })));
-        }
+      .then(({ data, error }) => {
+        console.log('[report] query result:', { count: data?.length, error, sample: (data ?? []).slice(0, 3).map((t: any) => ({ trip_type: t.trip_type, dropoff_id: t.dropoff_id, source_location_id: t.source_location_id })) });
+        if (data) setTrips(data as unknown as TripReport[]);
         setLoading(false);
       });
   }, [fromDate, toDate]);
