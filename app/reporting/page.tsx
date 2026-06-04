@@ -111,8 +111,7 @@ export default function ReportingPage() {
         weigh_bridge(id, net_weight, rubbish_weight, foc_weight, material_type_ids, outbound_material_type_ids)
       `)
       .eq('status', 'completed')
-      .then(({ data, error }) => {
-        console.log('[report] query result:', { count: data?.length, error, sample: (data ?? []).slice(0, 3).map((t: any) => ({ trip_type: t.trip_type, dropoff_id: t.dropoff_id, source_location_id: t.source_location_id })) });
+      .then(({ data }) => {
         if (data) setTrips(data as unknown as TripReport[]);
         setLoading(false);
       });
@@ -156,7 +155,7 @@ export default function ReportingPage() {
     });
   }, [trips, materialFilter, customerFilter, yardFilter, materialTypes, fromDate, toDate]);
 
-  // Summary cards: company filter excludes outbound trips
+  // Summary cards — derived from filteredTrips so they always match the table
   const stats = useMemo(() => {
     let totalTrips = 0;
     let inboundNet = 0;
@@ -164,10 +163,7 @@ export default function ReportingPage() {
     let rubbishTotal = 0;
     let outboundTotal = 0;
 
-    for (const trip of trips) {
-      if (!withinRange(trip)) continue;
-      if (yardFilter !== null && tripYardId(trip) !== yardFilter) continue;
-      if (customerFilter !== null && trip.customer_id !== customerFilter) continue;
+    for (const trip of filteredTrips) {
       const wbs = matchesMaterialFilter(trip);
       if (wbs === null) continue;
       totalTrips++;
@@ -181,7 +177,7 @@ export default function ReportingPage() {
       }
     }
     return { totalTrips, inboundNet, outboundTotal, focTotal, rubbishTotal };
-  }, [trips, materialFilter, customerFilter, yardFilter, materialTypes, fromDate, toDate]);
+  }, [filteredTrips, materialFilter, materialTypes]);
 
   // Grouped table (all companies): one row per date + company/destination
   const groupedRows = useMemo(() => {
