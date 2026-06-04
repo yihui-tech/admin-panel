@@ -19,6 +19,8 @@ type TripReport = {
   created_at: string;
   vehicle_number: string | null;
   customer_id: number | null;
+  dropoff_id: number | null;
+  source_location_id: number | null;
   outbound_location_id: number | null;
   customers: { name: string } | null;
   outbound_locations: { name: string } | null;
@@ -33,6 +35,11 @@ type MaterialType = {
 
 type CustomerOption = {
   customer_id: number;
+  name: string;
+};
+
+type LocationOption = {
+  id: number;
   name: string;
 };
 
@@ -65,18 +72,22 @@ export default function ReportingPage() {
   const [toDate, setToDate] = useState(defaultTo);
   const [materialFilter, setMaterialFilter] = useState<MaterialFilter>(null);
   const [customerFilter, setCustomerFilter] = useState<number | null>(null);
+  const [yardFilter, setYardFilter] = useState<number | null>(null);
   const [trips, setTrips] = useState<TripReport[]>([]);
   const [materialTypes, setMaterialTypes] = useState<MaterialType[]>([]);
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
+  const [locations, setLocations] = useState<LocationOption[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     Promise.all([
       supabase.from('material_types').select('id, name, category').order('category').order('name'),
       supabase.from('customers').select('customer_id, name').order('name'),
-    ]).then(([matRes, custRes]) => {
+      supabase.from('locations').select('id, name').order('name'),
+    ]).then(([matRes, custRes, locRes]) => {
       if (matRes.data) setMaterialTypes(matRes.data);
       if (custRes.data) setCustomers(custRes.data);
+      if (locRes.data) setLocations(locRes.data);
     });
   }, []);
 
@@ -92,6 +103,8 @@ export default function ReportingPage() {
         created_at,
         vehicle_number,
         customer_id,
+        dropoff_id,
+        source_location_id,
         outbound_location_id,
         customers(name),
         outbound_locations(name),
@@ -105,6 +118,9 @@ export default function ReportingPage() {
   }, [fromDate, toDate]);
 
   const effectiveDate = (trip: TripReport) => trip.trip_date ?? trip.created_at.slice(0, 10);
+
+  const tripYardId = (trip: TripReport): number | null =>
+    trip.trip_type === 'outbound' ? trip.source_location_id : trip.dropoff_id;
 
   const matchesMaterialFilter = (trip: TripReport): WeighBridgeRecord[] | null => {
     const isOutboundTrip = trip.trip_type === 'outbound';
@@ -133,12 +149,13 @@ export default function ReportingPage() {
     return trips.filter(trip => {
       if (!withinRange(trip)) return false;
       const isOutbound = trip.trip_type === 'outbound';
+      if (yardFilter !== null && tripYardId(trip) !== yardFilter) return false;
       if (customerFilter !== null && trip.customer_id !== customerFilter) return false;
       return matchesMaterialFilter(trip) !== null;
     });
-  }, [trips, materialFilter, customerFilter, materialTypes, fromDate, toDate]);
+  }, [trips, materialFilter, customerFilter, yardFilter, materialTypes, fromDate, toDate]);
 
-  // Summary cards: company filter excludes outbound trips
+  // Summary cards — derived from filteredTrips so they always match the table
   const stats = useMemo(() => {
     let totalTrips = 0;
     let inboundNet = 0;
@@ -146,9 +163,7 @@ export default function ReportingPage() {
     let rubbishTotal = 0;
     let outboundTotal = 0;
 
-    for (const trip of trips) {
-      if (!withinRange(trip)) continue;
-      if (customerFilter !== null && trip.customer_id !== customerFilter) continue;
+    for (const trip of filteredTrips) {
       const wbs = matchesMaterialFilter(trip);
       if (wbs === null) continue;
       totalTrips++;
@@ -162,7 +177,7 @@ export default function ReportingPage() {
       }
     }
     return { totalTrips, inboundNet, outboundTotal, focTotal, rubbishTotal };
-  }, [trips, materialFilter, customerFilter, materialTypes, fromDate, toDate]);
+  }, [filteredTrips, materialFilter, materialTypes]);
 
   // Grouped table (all companies): one row per date + company/destination
   const groupedRows = useMemo(() => {
@@ -214,6 +229,17 @@ export default function ReportingPage() {
           >
             <option value="">All companies</option>
             {customers.map(c => <option key={c.customer_id} value={c.customer_id}>{c.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Yard</label>
+          <select
+            value={yardFilter ?? ''}
+            onChange={e => setYardFilter(e.target.value ? Number(e.target.value) : null)}
+            className="border rounded px-3 py-2 text-sm min-w-[160px]"
+          >
+            <option value="">All locations</option>
+            {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
           </select>
         </div>
         <div>
