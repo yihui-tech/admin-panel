@@ -42,8 +42,6 @@ export default function AnalyticsPage() {
     return (a.avg_swap_days ?? Infinity) - (b.avg_swap_days ?? Infinity);
   });
 
-  const maxSwaps = Math.max(...rows.map(r => r[swapCol] as number), 1);
-
   const colHeader = (label: string, col: SortCol) => (
     <th
       className="text-right px-4 py-3 font-medium w-28 cursor-pointer hover:text-blue-600 select-none"
@@ -89,14 +87,12 @@ export default function AnalyticsPage() {
                 {colHeader('Issues',   'issues')}
                 {colHeader('Swaps',    'swaps')}
                 {colHeader('Avg Swap', 'avg')}
-                <th className="px-4 py-3 w-36" />
               </tr>
             </thead>
             <tbody>
               {sorted.map(row => {
                 const swapCount  = row[swapCol]  as number;
                 const issueCount = row[issueCol] as number;
-                const barWidth   = Math.round((swapCount / maxSwaps) * 100);
                 return (
                   <tr key={row.location_id} className="border-b last:border-0 hover:bg-gray-50">
                     <td className="px-4 py-3 text-gray-600">{row.customer_name}</td>
@@ -117,13 +113,6 @@ export default function AnalyticsPage() {
                             {row.avg_swap_days}d
                           </span>
                         : <span className="text-gray-300">—</span>}
-                    </td>
-                    <td className="px-4 py-3">
-                      {swapCount > 0 && (
-                        <div className="h-2 rounded-full bg-orange-100 overflow-hidden">
-                          <div className="h-2 rounded-full bg-orange-400" style={{ width: `${barWidth}%` }} />
-                        </div>
-                      )}
                     </td>
                   </tr>
                 );
