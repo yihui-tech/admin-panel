@@ -49,7 +49,7 @@ type OutboundLocationOption = {
 };
 
 const formatKg = (val: number) =>
-  `${val.toLocaleString('en-SG', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg`;
+  `${val.toLocaleString('en-SG', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} kg`;
 
 const formatDate = (dateStr: string) =>
   new Date(dateStr).toLocaleDateString('en-SG', { day: '2-digit', month: 'short', year: 'numeric' });
