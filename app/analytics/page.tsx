@@ -7,6 +7,8 @@ type AnalyticsRow = {
   location_id: number;
   location_name: string;
   customer_name: string;
+  bins_at_site: number;
+  oldest_days: number | null;
   issues_this_week: number;
   issues_this_month: number;
   swaps_this_week: number;
@@ -14,13 +16,19 @@ type AnalyticsRow = {
   avg_swap_days: number | null;
 };
 
-type SortCol = 'swaps' | 'issues' | 'avg';
+type SortCol = 'bins' | 'oldest' | 'swaps' | 'issues' | 'avg';
+
+function oldestColor(days: number): string {
+  if (days >= 14) return 'text-red-600';
+  if (days >= 7)  return 'text-orange-500';
+  return 'text-green-600';
+}
 
 export default function AnalyticsPage() {
   const [rows, setRows] = useState<AnalyticsRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<'week' | 'month'>('month');
-  const [sortCol, setSortCol] = useState<SortCol>('swaps');
+  const [sortCol, setSortCol] = useState<SortCol>('bins');
 
   useEffect(() => {
     const fetchData = async () => {
@@ -36,10 +44,18 @@ export default function AnalyticsPage() {
   const swapCol: keyof AnalyticsRow  = period === 'week' ? 'swaps_this_week'  : 'swaps_this_month';
   const issueCol: keyof AnalyticsRow = period === 'week' ? 'issues_this_week' : 'issues_this_month';
 
-  const siteVal = (row: AnalyticsRow): number =>
-    sortCol === 'swaps'  ? (row[swapCol]  as number) :
-    sortCol === 'issues' ? (row[issueCol] as number) :
-    row.avg_swap_days ?? Infinity;
+  const siteVal = (row: AnalyticsRow): number => {
+    if (sortCol === 'bins')    return row.bins_at_site;
+    if (sortCol === 'oldest')  return row.oldest_days ?? -1;
+    if (sortCol === 'swaps')   return row[swapCol]  as number;
+    if (sortCol === 'issues')  return row[issueCol] as number;
+    return row.avg_swap_days ?? -1;
+  };
+
+  const siteCmp = (a: AnalyticsRow, b: AnalyticsRow) =>
+    sortCol === 'avg' || sortCol === 'oldest'
+      ? siteVal(a) - siteVal(b)
+      : siteVal(b) - siteVal(a);
 
   // Group sites by customer
   const grouped: Record<string, AnalyticsRow[]> = {};
@@ -47,38 +63,31 @@ export default function AnalyticsPage() {
     if (!grouped[row.customer_name]) grouped[row.customer_name] = [];
     grouped[row.customer_name].push(row);
   }
+  for (const sites of Object.values(grouped)) sites.sort(siteCmp);
 
-  // Sort sites within each customer by selected column
-  for (const sites of Object.values(grouped)) {
-    sites.sort((a, b) =>
-      sortCol === 'avg'
-        ? (a.avg_swap_days ?? Infinity) - (b.avg_swap_days ?? Infinity)
-        : (b[swapCol] as number) - (a[swapCol] as number)
-    );
-  }
-
-  // Sort customer groups by their aggregate (sum for issues/swaps, avg for avg)
+  // Sort customer groups by their aggregate
   const customerOrder = Object.keys(grouped).sort((a, b) => {
     const aRows = grouped[a];
     const bRows = grouped[b];
     if (sortCol === 'avg') {
-      const aAvg = aRows.filter(r => r.avg_swap_days !== null).map(r => r.avg_swap_days as number);
-      const bAvg = bRows.filter(r => r.avg_swap_days !== null).map(r => r.avg_swap_days as number);
-      const aVal = aAvg.length ? aAvg.reduce((s, v) => s + v, 0) / aAvg.length : Infinity;
-      const bVal = bAvg.length ? bAvg.reduce((s, v) => s + v, 0) / bAvg.length : Infinity;
-      return aVal - bVal;
+      const vals = (r: AnalyticsRow[]) => r.filter(x => x.avg_swap_days !== null).map(x => x.avg_swap_days as number);
+      const avg = (v: number[]) => v.length ? v.reduce((s, x) => s + x, 0) / v.length : -1;
+      return avg(vals(aRows)) - avg(vals(bRows));
     }
-    const aTotal = aRows.reduce((s, r) => s + siteVal(r), 0);
-    const bTotal = bRows.reduce((s, r) => s + siteVal(r), 0);
-    return bTotal - aTotal;
+    if (sortCol === 'oldest') {
+      const max = (r: AnalyticsRow[]) => Math.max(...r.map(x => x.oldest_days ?? -1));
+      return max(bRows) - max(aRows);
+    }
+    const sum = (r: AnalyticsRow[]) => r.reduce((s, x) => s + siteVal(x), 0);
+    return sum(bRows) - sum(aRows);
   });
 
-  const colHeader = (label: string, col: SortCol) => (
+  const colHeader = (label: string, col: SortCol, asc = false) => (
     <th
-      className="text-right px-4 py-3 font-medium w-28 cursor-pointer hover:text-blue-600 select-none"
+      className="text-right px-4 py-3 font-medium w-24 cursor-pointer hover:text-blue-600 select-none whitespace-nowrap"
       onClick={() => setSortCol(col)}
     >
-      {label}{sortCol === col ? (col === 'avg' ? ' ↑' : ' ↓') : ''}
+      {label}{sortCol === col ? (asc ? ' ↑' : ' ↓') : ''}
     </th>
   );
 
@@ -101,7 +110,8 @@ export default function AnalyticsPage() {
 
       <h2 className="text-base font-semibold mb-1 text-gray-700">Activity by Customer Site</h2>
       <p className="text-xs text-gray-400 mb-4">
-        Issues = bins dropped off or roundtripped. Swaps = bins collected or roundtripped. Avg Swap = avg days at site before collection (all-time). Click column headers to sort.
+        Bins Now = bins currently at site. Oldest = days since the longest-sitting bin arrived.
+        Issues = dropoffs + roundtrips. Swaps = collections + roundtrips. Avg Swap = all-time avg days at site. Click headers to sort.
       </p>
 
       {loading ? (
@@ -114,9 +124,11 @@ export default function AnalyticsPage() {
             <thead className="bg-gray-50 border-b">
               <tr>
                 <th className="text-left px-4 py-3 font-medium">Site</th>
+                {colHeader('Bins Now', 'bins')}
+                {colHeader('Oldest',   'oldest', true)}
                 {colHeader('Issues',   'issues')}
                 {colHeader('Swaps',    'swaps')}
-                {colHeader('Avg Swap', 'avg')}
+                {colHeader('Avg Swap', 'avg',    true)}
               </tr>
             </thead>
             <tbody>
@@ -124,39 +136,53 @@ export default function AnalyticsPage() {
                 const sites = grouped[customer];
                 return (
                   <>
-                    {/* Customer header row */}
                     <tr key={`customer-${customer}`} className="bg-gray-50 border-b border-t">
-                      <td colSpan={4} className="px-4 py-2 font-semibold text-gray-700 text-xs uppercase tracking-wide">
+                      <td colSpan={6} className="px-4 py-2 font-semibold text-gray-700 text-xs uppercase tracking-wide">
                         {customer}
                       </td>
                     </tr>
-                    {/* Site rows */}
-                    {sites.map(row => {
-                      const swapCount  = row[swapCol]  as number;
-                      const issueCount = row[issueCol] as number;
-                      return (
-                        <tr key={row.location_id} className="border-b last:border-0 hover:bg-gray-50">
-                          <td className="px-4 py-2.5 pl-7 text-gray-800">{row.location_name}</td>
-                          <td className="px-4 py-2.5 text-right tabular-nums">
-                            {issueCount > 0
-                              ? <span className="font-semibold text-blue-700">{issueCount}</span>
-                              : <span className="text-gray-300">0</span>}
-                          </td>
-                          <td className="px-4 py-2.5 text-right tabular-nums">
-                            {swapCount > 0
-                              ? <span className="font-semibold text-orange-600">{swapCount}</span>
-                              : <span className="text-gray-300">0</span>}
-                          </td>
-                          <td className="px-4 py-2.5 text-right tabular-nums">
-                            {row.avg_swap_days !== null
-                              ? <span className={`font-semibold ${row.avg_swap_days >= 14 ? 'text-red-600' : row.avg_swap_days >= 7 ? 'text-orange-500' : 'text-green-600'}`}>
-                                  {Number(row.avg_swap_days).toFixed(2)}d
-                                </span>
-                              : <span className="text-gray-300">—</span>}
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {sites.map(row => (
+                      <tr key={row.location_id} className="border-b last:border-0 hover:bg-gray-50">
+                        <td className="px-4 py-2.5 pl-7 text-gray-800">{row.location_name}</td>
+
+                        {/* Bins at site now */}
+                        <td className="px-4 py-2.5 text-right tabular-nums">
+                          {row.bins_at_site > 0
+                            ? <span className="font-semibold text-gray-800">{row.bins_at_site}</span>
+                            : <span className="text-gray-300">0</span>}
+                        </td>
+
+                        {/* Oldest bin days */}
+                        <td className="px-4 py-2.5 text-right tabular-nums">
+                          {row.oldest_days !== null
+                            ? <span className={`font-semibold ${oldestColor(row.oldest_days)}`}>{row.oldest_days}d</span>
+                            : <span className="text-gray-300">—</span>}
+                        </td>
+
+                        {/* Issues this period */}
+                        <td className="px-4 py-2.5 text-right tabular-nums">
+                          {(row[issueCol] as number) > 0
+                            ? <span className="font-semibold text-blue-700">{row[issueCol]}</span>
+                            : <span className="text-gray-300">0</span>}
+                        </td>
+
+                        {/* Swaps this period */}
+                        <td className="px-4 py-2.5 text-right tabular-nums">
+                          {(row[swapCol] as number) > 0
+                            ? <span className="font-semibold text-orange-600">{row[swapCol]}</span>
+                            : <span className="text-gray-300">0</span>}
+                        </td>
+
+                        {/* Avg swap days */}
+                        <td className="px-4 py-2.5 text-right tabular-nums">
+                          {row.avg_swap_days !== null
+                            ? <span className={`font-semibold ${oldestColor(row.avg_swap_days)}`}>
+                                {Number(row.avg_swap_days).toFixed(2)}d
+                              </span>
+                            : <span className="text-gray-300">—</span>}
+                        </td>
+                      </tr>
+                    ))}
                   </>
                 );
               })}
