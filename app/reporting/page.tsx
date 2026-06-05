@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 
 type WeighBridgeRecord = {
@@ -48,19 +48,11 @@ type OutboundLocationOption = {
   name: string;
 };
 
-type MaterialFilter = null | 'inbound' | 'outbound' | number;
-
 const formatKg = (val: number) =>
   `${val.toLocaleString('en-SG', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg`;
 
 const formatDate = (dateStr: string) =>
   new Date(dateStr).toLocaleDateString('en-SG', { day: '2-digit', month: 'short', year: 'numeric' });
-
-const parseMaterialFilter = (val: string): MaterialFilter => {
-  if (!val) return null;
-  if (val === 'inbound' || val === 'outbound') return val;
-  return Number(val);
-};
 
 const tripNetWeight = (trip: TripReport) =>
   trip.weigh_bridge.reduce((sum, wb) => {
@@ -75,7 +67,9 @@ const defaultTo = today.toISOString().slice(0, 10);
 export default function ReportingPage() {
   const [fromDate, setFromDate] = useState(defaultFrom);
   const [toDate, setToDate] = useState(defaultTo);
-  const [materialFilter, setMaterialFilter] = useState<MaterialFilter>(null);
+  const [materialFilter, setMaterialFilter] = useState<string[]>([]);
+  const [showMaterial, setShowMaterial] = useState(false);
+  const materialRef = useRef<HTMLDivElement>(null);
   const [customerFilter, setCustomerFilter] = useState<number | null>(null);
   const [yardFilter, setYardFilter] = useState<number | null>(null);
   const [destinationFilter, setDestinationFilter] = useState<number | null>(null);
@@ -131,21 +125,40 @@ export default function ReportingPage() {
   const tripYardId = (trip: TripReport): number | null =>
     trip.trip_type === 'outbound' ? trip.source_location_id : trip.dropoff_id;
 
-  const matchesMaterialFilter = (trip: TripReport): WeighBridgeRecord[] | null => {
-    const isOutboundTrip = trip.trip_type === 'outbound';
-    if (materialFilter === 'inbound' && isOutboundTrip) return null;
-    if (materialFilter === 'outbound' && !isOutboundTrip) return null;
-    let wbs = trip.weigh_bridge;
-    if (typeof materialFilter === 'number') {
-      const mat = materialTypes.find(m => m.id === materialFilter);
-      if (mat) {
-        wbs = mat.category === 'inbound'
-          ? wbs.filter(w => w.material_type_ids?.includes(materialFilter) ?? false)
-          : wbs.filter(w => w.outbound_material_type_ids?.includes(materialFilter) ?? false);
+  useEffect(() => {
+    if (!showMaterial) return;
+    const handler = (e: MouseEvent) => {
+      if (materialRef.current && !materialRef.current.contains(e.target as Node)) {
+        setShowMaterial(false);
       }
-      if (wbs.length === 0) return null;
-    }
-    return wbs;
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showMaterial]);
+
+  const toggleMaterial = (value: string) => {
+    setMaterialFilter(prev =>
+      prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]
+    );
+  };
+
+  const matchesMaterialFilter = (trip: TripReport): WeighBridgeRecord[] | null => {
+    if (materialFilter.length === 0) return trip.weigh_bridge;
+    const isOutboundTrip = trip.trip_type === 'outbound';
+    if (materialFilter.includes('inbound') && !isOutboundTrip) return trip.weigh_bridge;
+    if (materialFilter.includes('outbound') && isOutboundTrip) return trip.weigh_bridge;
+    const specificIds = materialFilter.filter(f => f !== 'inbound' && f !== 'outbound').map(Number);
+    if (specificIds.length === 0) return null;
+    const wbs = trip.weigh_bridge.filter(w =>
+      specificIds.some(id => {
+        const mat = materialTypes.find(m => m.id === id);
+        if (!mat) return false;
+        return mat.category === 'inbound'
+          ? (w.material_type_ids?.includes(id) ?? false)
+          : (w.outbound_material_type_ids?.includes(id) ?? false);
+      })
+    );
+    return wbs.length > 0 ? wbs : null;
   };
 
   const withinRange = (trip: TripReport) => {
@@ -216,17 +229,25 @@ export default function ReportingPage() {
   const outboundMaterials = materialTypes.filter(m => m.category === 'outbound');
 
   const isOutboundView =
-    materialFilter === 'outbound' ||
-    (typeof materialFilter === 'number' && materialTypes.find(m => m.id === materialFilter)?.category === 'outbound');
+    materialFilter.includes('outbound') ||
+    materialFilter.some(f => f !== 'inbound' && f !== 'outbound' &&
+      materialTypes.find(m => m.id === Number(f))?.category === 'outbound');
 
-  const handleMaterialChange = (val: string) => {
-    const newMat = parseMaterialFilter(val);
-    setMaterialFilter(newMat);
-    const willBeOutbound =
-      newMat === 'outbound' ||
-      (typeof newMat === 'number' && materialTypes.find(m => m.id === newMat)?.category === 'outbound');
-    if (!willBeOutbound) setDestinationFilter(null);
-  };
+  useEffect(() => {
+    if (!isOutboundView) setDestinationFilter(null);
+  }, [isOutboundView]);
+
+  const materialFilterLabel = (() => {
+    if (materialFilter.length === 0) return 'All materials';
+    const parts: string[] = [];
+    if (materialFilter.includes('inbound')) parts.push('All Inbound');
+    if (materialFilter.includes('outbound')) parts.push('All Outbound');
+    materialFilter.filter(f => f !== 'inbound' && f !== 'outbound').forEach(f => {
+      const mat = materialTypes.find(m => m.id === Number(f));
+      if (mat) parts.push(mat.name);
+    });
+    return parts.length > 2 ? `${parts.length} materials` : parts.join(', ');
+  })();
 
   return (
     <main className="max-w-5xl mx-auto p-8 bg-white text-gray-900 min-h-screen">
@@ -264,27 +285,59 @@ export default function ReportingPage() {
             {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
           </select>
         </div>
-        <div>
+        <div ref={materialRef} className="relative">
           <label className="block text-xs font-medium text-gray-500 mb-1">Material</label>
-          <select
-            value={materialFilter === null ? '' : String(materialFilter)}
-            onChange={e => handleMaterialChange(e.target.value)}
-            className="border rounded px-3 py-2 text-sm min-w-[180px]"
+          <button
+            type="button"
+            onClick={() => setShowMaterial(v => !v)}
+            className="border rounded px-3 py-2 text-sm min-w-[180px] text-left bg-white w-full flex items-center justify-between gap-2"
           >
-            <option value="">All</option>
-            <option value="inbound">All Inbound</option>
-            <option value="outbound">All Outbound</option>
-            {inboundMaterials.length > 0 && (
-              <optgroup label="Inbound">
-                {inboundMaterials.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-              </optgroup>
-            )}
-            {outboundMaterials.length > 0 && (
-              <optgroup label="Outbound">
-                {outboundMaterials.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-              </optgroup>
-            )}
-          </select>
+            <span className="truncate">{materialFilterLabel}</span>
+            <span className="text-gray-400">▾</span>
+          </button>
+          {showMaterial && (
+            <div className="absolute z-20 top-full left-0 mt-1 border border-gray-200 rounded-lg bg-white shadow-lg min-w-[220px] max-h-72 overflow-y-auto py-1">
+              <label className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer text-sm font-medium">
+                <input type="checkbox" checked={materialFilter.includes('inbound')} onChange={() => toggleMaterial('inbound')} className="rounded" />
+                All Inbound
+              </label>
+              <label className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer text-sm font-medium">
+                <input type="checkbox" checked={materialFilter.includes('outbound')} onChange={() => toggleMaterial('outbound')} className="rounded" />
+                All Outbound
+              </label>
+              {(inboundMaterials.length > 0 || outboundMaterials.length > 0) && <div className="border-t my-1" />}
+              {inboundMaterials.length > 0 && (
+                <>
+                  <p className="text-xs text-gray-400 px-3 py-1 uppercase tracking-wide">Inbound</p>
+                  {inboundMaterials.map(m => (
+                    <label key={m.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer text-sm">
+                      <input type="checkbox" checked={materialFilter.includes(String(m.id))} onChange={() => toggleMaterial(String(m.id))} className="rounded" />
+                      {m.name}
+                    </label>
+                  ))}
+                </>
+              )}
+              {outboundMaterials.length > 0 && (
+                <>
+                  <p className="text-xs text-gray-400 px-3 py-1 uppercase tracking-wide">Outbound</p>
+                  {outboundMaterials.map(m => (
+                    <label key={m.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer text-sm">
+                      <input type="checkbox" checked={materialFilter.includes(String(m.id))} onChange={() => toggleMaterial(String(m.id))} className="rounded" />
+                      {m.name}
+                    </label>
+                  ))}
+                </>
+              )}
+              {materialFilter.length > 0 && (
+                <>
+                  <div className="border-t my-1" />
+                  <button type="button" onClick={() => setMaterialFilter([])} className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-blue-50">
+                    Clear selection
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
         {isOutboundView && (
           <div>
