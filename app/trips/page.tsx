@@ -27,6 +27,8 @@ type Trip = {
   customer_id: string | null;
   customer_location_id: number | null;
   dropoff_id: string | null;
+  source_location_id: string | null;
+  trip_type: string | null;
   requester: string | null;
   remarks: string | null;
   status: string;
@@ -132,13 +134,13 @@ function SortableTripRow({
         {trip.weigh_bridge.length === 0 ? (
           <span className="text-gray-400">—</span>
         ) : trip.weigh_bridge.length === 1 ? (
-          <span className="text-gray-700 text-sm">{trip.weigh_bridge[0].net_weight.toFixed(3)} kg</span>
+          <span className="text-gray-700 text-sm">{trip.weigh_bridge[0].net_weight.toFixed(0)} kg</span>
         ) : (
           <div className="text-xs space-y-0.5">
             {trip.weigh_bridge.map((w, i) => (
-              <div key={i} className="text-gray-500">Load {i + 1}: {w.net_weight.toFixed(3)} kg</div>
+              <div key={i} className="text-gray-500">Load {i + 1}: {w.net_weight.toFixed(0)} kg</div>
             ))}
-            <div className="font-semibold text-gray-800 border-t pt-0.5 mt-0.5">{netWeight.toFixed(3)} kg</div>
+            <div className="font-semibold text-gray-800 border-t pt-0.5 mt-0.5">{netWeight.toFixed(0)} kg</div>
           </div>
         )}
       </td>
@@ -209,7 +211,7 @@ export default function TripsPage() {
   const fetchTrips = async () => {
     const { data } = await supabase
       .from('trips')
-      .select('id, vehicle_number, driver_id, customer_id, customer_location_id, dropoff_id, requester, remarks, status, trip_order, trip_date, created_at, completed_at, customers(name, address, contact_person, contact_number), customer_locations(name, address, contact_person, contact_number), locations(name, address), weigh_bridge(net_weight), trip_bins(id, bin_id, action, bins(serial_number))')
+      .select('id, vehicle_number, driver_id, customer_id, customer_location_id, dropoff_id, source_location_id, trip_type, requester, remarks, status, trip_order, trip_date, created_at, completed_at, customers(name, address, contact_person, contact_number), customer_locations(name, address, contact_person, contact_number), locations(name, address), weigh_bridge(net_weight), trip_bins(id, bin_id, action, bins(serial_number))')
       .order('created_at', { ascending: false });
     if (data) setTrips(data as unknown as Trip[]);
   };
@@ -414,10 +416,11 @@ export default function TripsPage() {
     const { error } = await supabase.from('trips').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', id);
     if (error) { alert('Error updating trip: ' + error.message); return; }
 
+    const yardId = trip.dropoff_id ? Number(trip.dropoff_id) : (trip.source_location_id ? Number(trip.source_location_id) : null);
     for (const tb of trip.trip_bins) {
       if (tb.action === 'pickup' || tb.action === 'roundtrip') {
         await supabase.from('bins').update({
-          location_id: trip.dropoff_id ? Number(trip.dropoff_id) : null,
+          location_id: yardId,
           customer_id: null,
           customer_location_id: null,
         }).eq('id', tb.bin_id);
