@@ -7,91 +7,56 @@ type AnalyticsRow = {
   location_id: number;
   location_name: string;
   customer_name: string;
-  dropoffs_this_week: number;
-  dropoffs_this_month: number;
+  issues_this_week: number;
+  issues_this_month: number;
+  swaps_this_week: number;
+  swaps_this_month: number;
+  avg_swap_days: number | null;
 };
 
-function startOfWeek(): string {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  const day = d.getDay();
-  d.setDate(d.getDate() - (day === 0 ? 6 : day - 1)); // Monday
-  return d.toISOString();
-}
-
-function startOfMonth(): string {
-  const d = new Date();
-  d.setDate(1);
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString();
-}
+type SortCol = 'swaps' | 'issues' | 'avg';
 
 export default function AnalyticsPage() {
   const [rows, setRows] = useState<AnalyticsRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<'week' | 'month'>('month');
+  const [sortCol, setSortCol] = useState<SortCol>('swaps');
 
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
-
-      const weekStart = startOfWeek();
-      const monthStart = startOfMonth();
-
-      const [locResult, dropoffResult] = await Promise.all([
-        supabase
-          .from('customer_locations')
-          .select('id, name, customer_id, customers!inner(name)')
-          .order('name'),
-        supabase
-          .from('trip_bins')
-          .select('trips!inner(customer_location_id, completed_at, status)')
-          .eq('action', 'dropoff')
-          .eq('trips.status', 'completed'),
-      ]);
-
-      const allLocations = (locResult.data ?? []) as unknown as {
-        id: number;
-        name: string;
-        customer_id: number;
-        customers: { name: string };
-      }[];
-
-      const dropoffList = (dropoffResult.data ?? []) as unknown as {
-        trips: { customer_location_id: number | null; completed_at: string | null };
-      }[];
-
-      const result: AnalyticsRow[] = allLocations.map(loc => {
-        const relevant = dropoffList.filter(d => d.trips?.customer_location_id === loc.id);
-        return {
-          location_id: loc.id,
-          location_name: loc.name,
-          customer_name: loc.customers.name,
-          dropoffs_this_week: relevant.filter(d => d.trips?.completed_at && d.trips.completed_at >= weekStart).length,
-          dropoffs_this_month: relevant.filter(d => d.trips?.completed_at && d.trips.completed_at >= monthStart).length,
-        };
-      });
-
-      result.sort((a, b) =>
-        period === 'week'
-          ? b.dropoffs_this_week - a.dropoffs_this_week
-          : b.dropoffs_this_month - a.dropoffs_this_month
-      );
-
-      setRows(result);
+      const { data, error } = await supabase.rpc('bin_analytics');
+      if (error) console.error('bin_analytics RPC error:', error);
+      setRows((data ?? []) as AnalyticsRow[]);
       setLoading(false);
     };
-
     fetchData();
-  }, [period]);
+  }, []);
 
-  const activeCol: keyof AnalyticsRow = period === 'week' ? 'dropoffs_this_week' : 'dropoffs_this_month';
-  const max = Math.max(...rows.map(r => r[activeCol] as number), 1);
+  const swapCol: keyof AnalyticsRow  = period === 'week' ? 'swaps_this_week'  : 'swaps_this_month';
+  const issueCol: keyof AnalyticsRow = period === 'week' ? 'issues_this_week' : 'issues_this_month';
+
+  const sorted = [...rows].sort((a, b) => {
+    if (sortCol === 'swaps')  return (b[swapCol]  as number) - (a[swapCol]  as number);
+    if (sortCol === 'issues') return (b[issueCol] as number) - (a[issueCol] as number);
+    return (a.avg_swap_days ?? Infinity) - (b.avg_swap_days ?? Infinity);
+  });
+
+  const maxSwaps = Math.max(...rows.map(r => r[swapCol] as number), 1);
+
+  const colHeader = (label: string, col: SortCol) => (
+    <th
+      className="text-right px-4 py-3 font-medium w-28 cursor-pointer hover:text-blue-600 select-none"
+      onClick={() => setSortCol(col)}
+    >
+      {label}{sortCol === col ? (col === 'avg' ? ' ↑' : ' ↓') : ''}
+    </th>
+  );
 
   return (
-    <main className="max-w-4xl mx-auto p-8 bg-white text-gray-900 min-h-screen">
+    <main className="max-w-5xl mx-auto p-8 bg-white text-gray-900 min-h-screen">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Analytics</h1>
+        <h1 className="text-2xl font-bold">Bin Analytics</h1>
         <div className="flex border rounded overflow-hidden">
           {(['week', 'month'] as const).map(p => (
             <button
@@ -99,18 +64,21 @@ export default function AnalyticsPage() {
               onClick={() => setPeriod(p)}
               className={`px-4 py-2 text-sm font-medium ${period === p ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
             >
-              This {p.charAt(0).toUpperCase() + p.slice(1)}
+              This {p === 'week' ? 'Week' : 'Month'}
             </button>
           ))}
         </div>
       </div>
 
-      <h2 className="text-base font-semibold mb-3 text-gray-700">Bin Dropoffs by Customer Site</h2>
+      <h2 className="text-base font-semibold mb-1 text-gray-700">Activity by Customer Site</h2>
+      <p className="text-xs text-gray-400 mb-4">
+        Issues = bins dropped off. Swaps = bins collected. Avg Swap = avg days a bin stayed at site before collection (all-time). Click column headers to sort.
+      </p>
 
       {loading ? (
         <p className="text-sm text-gray-400 py-8 text-center">Loading…</p>
       ) : rows.length === 0 ? (
-        <p className="text-sm text-gray-400 py-8 text-center">No customer sites configured yet. Add sites from the Customers page.</p>
+        <p className="text-sm text-gray-400 py-8 text-center">No customer sites configured yet.</p>
       ) : (
         <div className="bg-white border rounded-lg overflow-hidden">
           <table className="w-full text-sm">
@@ -118,31 +86,42 @@ export default function AnalyticsPage() {
               <tr>
                 <th className="text-left px-4 py-3 font-medium">Customer</th>
                 <th className="text-left px-4 py-3 font-medium">Site</th>
-                <th className="text-right px-4 py-3 font-medium w-32">
-                  {period === 'week' ? 'This Week' : 'This Month'}
-                </th>
-                <th className="px-4 py-3 w-48"></th>
+                {colHeader('Issues',   'issues')}
+                {colHeader('Swaps',    'swaps')}
+                {colHeader('Avg Swap', 'avg')}
+                <th className="px-4 py-3 w-36" />
               </tr>
             </thead>
             <tbody>
-              {rows.map(row => {
-                const count = row[activeCol] as number;
-                const barWidth = Math.round((count / max) * 100);
+              {sorted.map(row => {
+                const swapCount  = row[swapCol]  as number;
+                const issueCount = row[issueCol] as number;
+                const barWidth   = Math.round((swapCount / maxSwaps) * 100);
                 return (
                   <tr key={row.location_id} className="border-b last:border-0 hover:bg-gray-50">
                     <td className="px-4 py-3 text-gray-600">{row.customer_name}</td>
                     <td className="px-4 py-3 font-medium">{row.location_name}</td>
                     <td className="px-4 py-3 text-right tabular-nums">
-                      {count > 0 ? (
-                        <span className="font-semibold text-gray-800">{count}</span>
-                      ) : (
-                        <span className="text-gray-300">0</span>
-                      )}
+                      {issueCount > 0
+                        ? <span className="font-semibold text-blue-700">{issueCount}</span>
+                        : <span className="text-gray-300">0</span>}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums">
+                      {swapCount > 0
+                        ? <span className="font-semibold text-orange-600">{swapCount}</span>
+                        : <span className="text-gray-300">0</span>}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums">
+                      {row.avg_swap_days !== null
+                        ? <span className={`font-semibold ${row.avg_swap_days >= 14 ? 'text-red-600' : row.avg_swap_days >= 7 ? 'text-orange-500' : 'text-green-600'}`}>
+                            {row.avg_swap_days}d
+                          </span>
+                        : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-4 py-3">
-                      {count > 0 && (
-                        <div className="h-2 rounded-full bg-blue-100 overflow-hidden">
-                          <div className="h-2 rounded-full bg-blue-500" style={{ width: `${barWidth}%` }} />
+                      {swapCount > 0 && (
+                        <div className="h-2 rounded-full bg-orange-100 overflow-hidden">
+                          <div className="h-2 rounded-full bg-orange-400" style={{ width: `${barWidth}%` }} />
                         </div>
                       )}
                     </td>

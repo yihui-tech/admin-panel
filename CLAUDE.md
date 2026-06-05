@@ -202,15 +202,15 @@ All routes are protected by `middleware.ts` using `@supabase/ssr`:
 - Bin swap analytics: dropoff counts per customer site, week/month toggle, bar chart
 
 ### /reporting
-- Filters: date range (from/to, defaults to current month), company dropdown, material type dropdown
+- Filters: date range (from/to, defaults to current month), company dropdown, yard dropdown, material type dropdown
+- Yard filter resolves yard from `dropoff_id` (collection/drop-off) or `source_location_id` (outbound)
 - Material filter options: All | All Inbound | All Outbound | specific material (grouped by category)
-- **Summary cards:** Total Trips, Inbound Net weight (after rubbish deduction), Outbound Net weight, FOC weight, Rubbish weight
+- **Summary cards:** Total Trips, Inbound Net weight (after rubbish deduction), Outbound Net weight, FOC weight, Rubbish weight — all derived from the same `filteredTrips` array so they are always consistent with the table
 - **Table — two modes depending on company filter:**
   - *All companies:* grouped by date + company/destination — shows trip count and total net weight per group, sorted latest first
   - *Specific company:* one row per individual trip (Date, Type, Company/Destination, Vehicle, Net Weight) — outbound trips are excluded since they have no customer
 - Data: fetches all completed trips on mount; date filtering is client-side using `trip_date ?? created_at.slice(0, 10)`
 - Outbound `net_weight` is stored negative in DB (weigh bridge convention); use `Math.abs()` when displaying
-- All aggregation is client-side; **tech debt:** migrate to a Supabase RPC as data volume grows (~70 trips/day across 2 yards)
 - All aggregation is client-side; **tech debt:** migrate to a Supabase RPC as data volume grows (~70 trips/day across 2 yards)
 
 ---
