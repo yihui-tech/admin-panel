@@ -43,6 +43,11 @@ type LocationOption = {
   name: string;
 };
 
+type OutboundLocationOption = {
+  id: number;
+  name: string;
+};
+
 type MaterialFilter = null | 'inbound' | 'outbound' | number;
 
 const formatKg = (val: number) =>
@@ -73,10 +78,12 @@ export default function ReportingPage() {
   const [materialFilter, setMaterialFilter] = useState<MaterialFilter>(null);
   const [customerFilter, setCustomerFilter] = useState<number | null>(null);
   const [yardFilter, setYardFilter] = useState<number | null>(null);
+  const [destinationFilter, setDestinationFilter] = useState<number | null>(null);
   const [trips, setTrips] = useState<TripReport[]>([]);
   const [materialTypes, setMaterialTypes] = useState<MaterialType[]>([]);
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [locations, setLocations] = useState<LocationOption[]>([]);
+  const [outboundLocations, setOutboundLocations] = useState<OutboundLocationOption[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -84,10 +91,12 @@ export default function ReportingPage() {
       supabase.from('material_types').select('id, name, category').order('category').order('name'),
       supabase.from('customers').select('customer_id, name').order('name'),
       supabase.from('locations').select('id, name').order('name'),
-    ]).then(([matRes, custRes, locRes]) => {
+      supabase.from('outbound_locations').select('id, name').order('name'),
+    ]).then(([matRes, custRes, locRes, outLocRes]) => {
       if (matRes.data) setMaterialTypes(matRes.data);
       if (custRes.data) setCustomers(custRes.data);
       if (locRes.data) setLocations(locRes.data);
+      if (outLocRes.data) setOutboundLocations(outLocRes.data);
     });
   }, []);
 
@@ -148,12 +157,12 @@ export default function ReportingPage() {
   const filteredTrips = useMemo(() => {
     return trips.filter(trip => {
       if (!withinRange(trip)) return false;
-      const isOutbound = trip.trip_type === 'outbound';
       if (yardFilter !== null && tripYardId(trip) !== yardFilter) return false;
       if (customerFilter !== null && trip.customer_id !== customerFilter) return false;
+      if (destinationFilter !== null && trip.outbound_location_id !== destinationFilter) return false;
       return matchesMaterialFilter(trip) !== null;
     });
-  }, [trips, materialFilter, customerFilter, yardFilter, materialTypes, fromDate, toDate]);
+  }, [trips, materialFilter, customerFilter, yardFilter, destinationFilter, materialTypes, fromDate, toDate]);
 
   // Summary cards — derived from filteredTrips so they always match the table
   const stats = useMemo(() => {
@@ -206,6 +215,19 @@ export default function ReportingPage() {
   const inboundMaterials = materialTypes.filter(m => m.category === 'inbound');
   const outboundMaterials = materialTypes.filter(m => m.category === 'outbound');
 
+  const isOutboundView =
+    materialFilter === 'outbound' ||
+    (typeof materialFilter === 'number' && materialTypes.find(m => m.id === materialFilter)?.category === 'outbound');
+
+  const handleMaterialChange = (val: string) => {
+    const newMat = parseMaterialFilter(val);
+    setMaterialFilter(newMat);
+    const willBeOutbound =
+      newMat === 'outbound' ||
+      (typeof newMat === 'number' && materialTypes.find(m => m.id === newMat)?.category === 'outbound');
+    if (!willBeOutbound) setDestinationFilter(null);
+  };
+
   return (
     <main className="max-w-5xl mx-auto p-8 bg-white text-gray-900 min-h-screen">
       <h1 className="text-2xl font-bold mb-6">Reporting</h1>
@@ -246,7 +268,7 @@ export default function ReportingPage() {
           <label className="block text-xs font-medium text-gray-500 mb-1">Material</label>
           <select
             value={materialFilter === null ? '' : String(materialFilter)}
-            onChange={e => setMaterialFilter(parseMaterialFilter(e.target.value))}
+            onChange={e => handleMaterialChange(e.target.value)}
             className="border rounded px-3 py-2 text-sm min-w-[180px]"
           >
             <option value="">All</option>
@@ -264,6 +286,19 @@ export default function ReportingPage() {
             )}
           </select>
         </div>
+        {isOutboundView && (
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Destination</label>
+            <select
+              value={destinationFilter ?? ''}
+              onChange={e => setDestinationFilter(e.target.value ? Number(e.target.value) : null)}
+              className="border rounded px-3 py-2 text-sm min-w-[180px]"
+            >
+              <option value="">All destinations</option>
+              {outboundLocations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+          </div>
+        )}
         {loading && <span className="text-sm text-gray-400 pb-2">Loading…</span>}
       </div>
 
