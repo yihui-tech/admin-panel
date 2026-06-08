@@ -1,10 +1,8 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabase';
-
-const PAGE_SIZE = 20;
 
 type Bin = {
   id: string;
@@ -23,6 +21,7 @@ type Bin = {
 type HistoryEntry = {
   id: string;
   action: 'pickup' | 'dropoff' | 'roundtrip';
+  sortDate: string;
   trips: {
     id: string;
     vehicle_number: string | null;
@@ -58,63 +57,51 @@ export default function BinHistoryPage() {
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [drivers, setDrivers] = useState<DriverMap>({});
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(false);
-  const [lastDropoffDate, setLastDropoffDate] = useState<string | null>(null);
+  const [newestFirst, setNewestFirst] = useState(true);
 
   useEffect(() => {
     const init = async () => {
-      const [binResult, driverResult] = await Promise.all([
+      const [binResult, driverResult, historyResult] = await Promise.all([
         supabase
           .from('bins')
           .select('id, serial_number, type, size, status, customer_id, customer_location_id, location_id, customers(name), customer_locations(name, customers(name)), locations(name)')
           .eq('id', binId)
           .single(),
         supabase.from('drivers').select('employee_id, name').order('name'),
+        supabase
+          .from('trip_bins')
+          .select('id, action, trips!inner(id, vehicle_number, driver_id, trip_date, completed_at, customers(name), customer_locations(name), locations!dropoff_id(name))')
+          .eq('bin_id', binId)
+          .eq('trips.status', 'completed'),
       ]);
 
       if (binResult.data) setBin(binResult.data as unknown as Bin);
+
       if (driverResult.data) {
         const map: DriverMap = {};
         for (const d of driverResult.data) map[d.employee_id] = d.name;
         setDrivers(map);
       }
 
-      await loadPage(0);
+      if (historyResult.data) {
+        // Attach a sortDate (trip_date preferred, completed_at as fallback) for reliable ordering
+        const rows = (historyResult.data as unknown as Omit<HistoryEntry, 'sortDate'>[]).map(e => ({
+          ...e,
+          sortDate: e.trips?.trip_date ?? e.trips?.completed_at?.slice(0, 10) ?? '',
+        }));
+        // Sort newest first by default
+        rows.sort((a, b) => b.sortDate.localeCompare(a.sortDate));
+        setEntries(rows);
+      }
+
       setLoading(false);
     };
     init();
   }, [binId]);
 
-  const loadPage = useCallback(async (offset: number) => {
-    if (offset === 0) setLoading(true); else setLoadingMore(true);
+  const displayed = newestFirst ? entries : [...entries].reverse();
 
-    const { data } = await supabase
-      .from('trip_bins')
-      .select('id, action, trips!inner(id, vehicle_number, driver_id, trip_date, completed_at, customers(name), customer_locations(name), locations!dropoff_id(name))')
-      .eq('bin_id', binId)
-      .eq('trips.status', 'completed')
-      .order('created_at', { ascending: false })
-      .range(offset, offset + PAGE_SIZE - 1);
-
-    const page = (data ?? []) as unknown as HistoryEntry[];
-
-    if (offset === 0) {
-      setEntries(page);
-      // find most recent dropoff for "last issued" display
-      const lastDropoff = page.find(e => e.action === 'dropoff');
-      setLastDropoffDate(lastDropoff?.trips?.trip_date ?? lastDropoff?.trips?.completed_at?.slice(0, 10) ?? null);
-    } else {
-      setEntries(prev => [...prev, ...page]);
-    }
-
-    setHasMore(page.length === PAGE_SIZE);
-    if (offset === 0) setLoading(false); else setLoadingMore(false);
-  }, [binId]);
-
-  const handleLoadMore = () => {
-    loadPage(entries.length);
-  };
+  const lastDropoffDate = entries.find(e => e.action === 'dropoff')?.sortDate ?? null;
 
   if (loading) {
     return (
@@ -147,7 +134,6 @@ export default function BinHistoryPage() {
 
   return (
     <main className="max-w-2xl mx-auto p-8 bg-white text-gray-900 min-h-screen">
-      {/* Back */}
       <button
         onClick={() => router.push('/bins')}
         className="text-sm text-gray-400 hover:text-gray-700 mb-6 flex items-center gap-1"
@@ -188,19 +174,30 @@ export default function BinHistoryPage() {
       </div>
 
       {/* Movement history */}
-      <h2 className="text-base font-semibold mb-4 text-gray-700">
-        Movement History
-        {entries.length > 0 && <span className="text-gray-400 font-normal text-sm ml-2">{entries.length}{hasMore ? '+' : ''} events</span>}
-      </h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-base font-semibold text-gray-700">
+          Movement History
+          {entries.length > 0 && (
+            <span className="text-gray-400 font-normal text-sm ml-2">{entries.length} events</span>
+          )}
+        </h2>
+        {entries.length > 1 && (
+          <button
+            onClick={() => setNewestFirst(f => !f)}
+            className="text-xs text-gray-400 hover:text-blue-600 border rounded px-2 py-1"
+          >
+            {newestFirst ? 'Oldest first' : 'Newest first'}
+          </button>
+        )}
+      </div>
 
       {entries.length === 0 ? (
         <p className="text-sm text-gray-400 text-center py-8">No completed trips recorded for this bin.</p>
       ) : (
         <div className="relative">
           <div className="absolute left-3 top-2 bottom-2 w-px bg-gray-200" />
-
           <div className="space-y-4">
-            {entries.map(entry => {
+            {displayed.map(entry => {
               const date = entry.trips?.trip_date ?? entry.trips?.completed_at?.slice(0, 10) ?? null;
               const isDropoff = entry.action === 'dropoff';
               const isPickup  = entry.action === 'pickup';
@@ -250,18 +247,6 @@ export default function BinHistoryPage() {
               );
             })}
           </div>
-
-          {hasMore && (
-            <div className="mt-6 text-center">
-              <button
-                onClick={handleLoadMore}
-                disabled={loadingMore}
-                className="border px-6 py-2 rounded font-medium text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-              >
-                {loadingMore ? 'Loading…' : 'Load older movements'}
-              </button>
-            </div>
-          )}
         </div>
       )}
     </main>
