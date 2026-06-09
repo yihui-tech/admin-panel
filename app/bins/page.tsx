@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Clock, Pencil, Trash2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -13,6 +14,7 @@ type Bin = {
   created_at: string;
   type: string | null;
   size: string | null;
+  status: string | null;
   customers: { name: string } | null;
   customer_locations: { customer_id: number; name: string; customers: { name: string } | null } | null;
   locations: { name: string } | null;
@@ -22,7 +24,6 @@ type Bin = {
 type CustomerOption = { customer_id: number; name: string };
 type CustomerLocationOption = { id: number; customer_id: number; name: string };
 type LocationOption = { id: number; name: string };
-type DriverOption = { employee_id: string; name: string };
 
 type BinForm = {
   serial_number: string;
@@ -32,20 +33,9 @@ type BinForm = {
   location_id: string;
   type: string;
   size: string;
+  status: string;
 };
 
-type BinHistoryEntry = {
-  id: string;
-  action: 'pickup' | 'dropoff' | 'roundtrip';
-  trips: {
-    id: string;
-    vehicle_number: string;
-    completed_at: string | null;
-    driver_id: string | null;
-    customers: { name: string } | null;
-    customer_locations: { name: string } | null;
-  } | null;
-};
 
 const emptyForm: BinForm = {
   serial_number: '',
@@ -55,6 +45,7 @@ const emptyForm: BinForm = {
   location_id: '',
   type: '',
   size: '',
+  status: 'active',
 };
 
 function binToForm(bin: Bin): BinForm {
@@ -69,6 +60,7 @@ function binToForm(bin: Bin): BinForm {
     location_id: bin.location_id ? String(bin.location_id) : '',
     type: bin.type ?? '',
     size: bin.size ?? '',
+    status: bin.status ?? 'active',
   };
 }
 
@@ -78,6 +70,7 @@ function formToPayload(form: BinForm) {
     customer_location_id: form.locationType === 'customer' && form.customer_location_id ? parseInt(form.customer_location_id, 10) : null,
     customer_id: null,
     location_id: form.locationType === 'location' && form.location_id ? parseInt(form.location_id, 10) : null,
+    status: form.status || 'active',
     type: form.type || null,
     size: form.size || null,
   };
@@ -88,7 +81,6 @@ export default function BinsPage() {
   const [customerOptions, setCustomerOptions] = useState<CustomerOption[]>([]);
   const [customerLocationOptions, setCustomerLocationOptions] = useState<CustomerLocationOption[]>([]);
   const [locationOptions, setLocationOptions] = useState<LocationOption[]>([]);
-  const [driverOptions, setDriverOptions] = useState<DriverOption[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editingBin, setEditingBin] = useState<Bin | null>(null);
   const [form, setForm] = useState<BinForm>(emptyForm);
@@ -97,15 +89,14 @@ export default function BinsPage() {
   const [typeFilter, setTypeFilter] = useState('');
   const [sizeFilter, setSizeFilter] = useState('');
   const [sortDays, setSortDays] = useState<'asc' | 'desc' | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'retired'>('active');
 
-  const [historyBin, setHistoryBin] = useState<Bin | null>(null);
-  const [history, setHistory] = useState<BinHistoryEntry[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
+  const router = useRouter();
 
   const fetchBins = async () => {
     const { data: rawBins } = await supabase
       .from('bins')
-      .select('id, serial_number, customer_id, customer_location_id, location_id, created_at, type, size, customers(name), customer_locations(customer_id, name, customers(name)), locations(name)')
+      .select('id, serial_number, customer_id, customer_location_id, location_id, created_at, type, size, status, customers(name), customer_locations(customer_id, name, customers(name)), locations(name)')
       .order('serial_number');
     if (!rawBins) return;
 
@@ -135,16 +126,14 @@ export default function BinsPage() {
 
   useEffect(() => {
     const fetchLookups = async () => {
-      const [c, cl, l, d] = await Promise.all([
+      const [c, cl, l] = await Promise.all([
         supabase.from('customers').select('customer_id, name').order('name'),
         supabase.from('customer_locations').select('id, customer_id, name').order('name'),
         supabase.from('locations').select('id, name').order('name'),
-        supabase.from('drivers').select('employee_id, name').order('name'),
       ]);
       if (c.data) setCustomerOptions(c.data);
       if (cl.data) setCustomerLocationOptions(cl.data);
       if (l.data) setLocationOptions(l.data);
-      if (d.data) setDriverOptions(d.data);
     };
     fetchBins();
     fetchLookups();
@@ -160,20 +149,6 @@ export default function BinsPage() {
     setForm(binToForm(bin));
     setEditingBin(bin);
     setShowModal(true);
-  };
-
-  const openHistory = async (bin: Bin) => {
-    setHistoryBin(bin);
-    setHistory([]);
-    setHistoryLoading(true);
-    const { data } = await supabase
-      .from('trip_bins')
-      .select('id, action, trips!inner(id, vehicle_number, completed_at, driver_id, customers(name), customer_locations(name))')
-      .eq('bin_id', bin.id)
-      .eq('trips.status', 'completed')
-      .order('created_at', { ascending: false });
-    setHistoryLoading(false);
-    if (data) setHistory(data as unknown as BinHistoryEntry[]);
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -239,6 +214,8 @@ export default function BinsPage() {
     if (locationFilter === 'unknown' && (bin.customer_id || bin.customer_location_id || bin.location_id)) return false;
     if (typeFilter && bin.type !== typeFilter) return false;
     if (sizeFilter && bin.size !== sizeFilter) return false;
+    if (statusFilter === 'active' && bin.status === 'retired') return false;
+    if (statusFilter === 'retired' && bin.status !== 'retired') return false;
     return true;
   }).sort((a, b) => {
     if (!sortDays) return 0;
@@ -260,13 +237,6 @@ export default function BinsPage() {
     return { label: 'Unknown', value: '—', color: 'text-gray-500 bg-gray-50' };
   };
 
-  const formatDate = (iso: string | null) => {
-    if (!iso) return '—';
-    return new Date(iso).toLocaleString('en-SG', {
-      day: '2-digit', month: 'short', year: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-    });
-  };
 
   return (
     <main className="max-w-4xl mx-auto p-8 bg-white text-gray-900 min-h-screen">
@@ -311,6 +281,16 @@ export default function BinsPage() {
             {sizeOptions.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         )}
+
+        <select
+          value={statusFilter}
+          onChange={e => setStatusFilter(e.target.value as 'all' | 'active' | 'retired')}
+          className="border rounded px-3 py-2 text-sm text-gray-700"
+        >
+          <option value="all">All Status</option>
+          <option value="active">Active</option>
+          <option value="retired">Retired</option>
+        </select>
       </div>
 
       <div className="bg-white border rounded-lg overflow-hidden">
@@ -321,6 +301,7 @@ export default function BinsPage() {
               <th className="text-left px-4 py-3 font-medium">Type</th>
               <th className="text-left px-4 py-3 font-medium">Size</th>
               <th className="text-left px-4 py-3 font-medium">Current Location</th>
+              <th className="text-left px-4 py-3 font-medium">Status</th>
               <th className="text-left px-4 py-3 font-medium whitespace-nowrap">
                 <button
                   onClick={() => setSortDays(s => s === 'asc' ? 'desc' : s === 'desc' ? null : 'asc')}
@@ -336,7 +317,7 @@ export default function BinsPage() {
           <tbody>
             {filteredBins.length === 0 && (
               <tr>
-                <td colSpan={6} className="text-center px-4 py-6 text-gray-400">
+                <td colSpan={7} className="text-center px-4 py-6 text-gray-400">
                   {bins.length === 0 ? 'No bins registered' : 'No bins match this filter'}
                 </td>
               </tr>
@@ -355,6 +336,11 @@ export default function BinsPage() {
                       {loc.value}
                     </span>
                   </td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex px-2 py-1 rounded text-xs font-medium ${bin.status === 'retired' ? 'bg-gray-100 text-gray-500' : 'bg-green-50 text-green-700'}`}>
+                      {bin.status === 'retired' ? 'Retired' : 'Active'}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     {days ? (
                       <span className={`text-xs font-medium px-2 py-1 rounded ${
@@ -368,7 +354,7 @@ export default function BinsPage() {
                     )}
                   </td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
-                    <button onClick={() => openHistory(bin)} title="History" className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded mr-1">
+                    <button onClick={() => router.push(`/bins/${bin.id}`)} title="History" className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded mr-1">
                       <Clock size={14} />
                     </button>
                     <button onClick={() => openEdit(bin)} title="Edit" className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded">
@@ -384,71 +370,6 @@ export default function BinsPage() {
           </tbody>
         </table>
       </div>
-
-      {/* History modal */}
-      {historyBin && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-lg max-h-[80vh] flex flex-col">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Bin {historyBin.serial_number} — Swap History</h2>
-              <button onClick={() => setHistoryBin(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
-            </div>
-
-            {historyLoading && <p className="text-sm text-gray-400 py-4 text-center">Loading…</p>}
-
-            {!historyLoading && history.length === 0 && (
-              <p className="text-sm text-gray-400 py-4 text-center">No completed trips recorded for this bin.</p>
-            )}
-
-            {!historyLoading && history.length > 0 && (
-              <div className="overflow-y-auto flex-1 -mx-1 px-1">
-                <div className="relative">
-                  {/* Timeline line */}
-                  <div className="absolute left-3 top-2 bottom-2 w-px bg-gray-200" />
-
-                  <div className="space-y-4">
-                    {history.map(entry => (
-                      <div key={entry.id} className="flex gap-4">
-                        {/* Dot */}
-                        <div className={`mt-1 w-6 h-6 rounded-full flex items-center justify-center shrink-0 z-10 text-xs font-bold ${
-                          entry.action === 'dropoff' ? 'bg-blue-100 text-blue-700' : entry.action === 'pickup' ? 'bg-orange-100 text-orange-700' : 'bg-purple-100 text-purple-700'
-                        }`}>
-                          {entry.action === 'dropoff' ? '↓' : entry.action === 'pickup' ? '↑' : '↕'}
-                        </div>
-
-                        <div className="flex-1 border rounded-lg px-3 py-2.5 text-sm bg-white">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${
-                              entry.action === 'dropoff' ? 'bg-blue-50 text-blue-700' : entry.action === 'pickup' ? 'bg-orange-50 text-orange-700' : 'bg-purple-50 text-purple-700'
-                            }`}>
-                              {entry.action === 'dropoff' ? 'Drop off at customer' : entry.action === 'pickup' ? 'Pick up from customer' : 'Roundtrip'}
-                            </span>
-                            <span className="text-xs text-gray-400">{formatDate(entry.trips?.completed_at ?? null)}</span>
-                          </div>
-                          <div className="text-gray-700 space-y-0.5 mt-1.5">
-                            {(entry.trips?.customer_locations || entry.trips?.customers) && (
-                              <div>
-                                <span className="text-gray-400">Site:</span>{' '}
-                                {entry.trips.customer_locations?.name ?? entry.trips.customers?.name}
-                              </div>
-                            )}
-                            {entry.trips?.driver_id && (
-                              <div><span className="text-gray-400">Driver:</span> {driverOptions.find(d => d.employee_id === entry.trips!.driver_id)?.name ?? entry.trips.driver_id}</div>
-                            )}
-                            {entry.trips?.vehicle_number && (
-                              <div><span className="text-gray-400">Vehicle:</span> {entry.trips.vehicle_number}</div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Create / Edit modal */}
       {showModal && (
@@ -532,6 +453,14 @@ export default function BinsPage() {
                   </select>
                 </div>
               )}
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Status</label>
+                <select name="status" value={form.status} onChange={handleChange} className="w-full border rounded px-3 py-2">
+                  <option value="active">Active</option>
+                  <option value="retired">Retired</option>
+                </select>
+              </div>
 
               <div className="flex gap-3 pt-2">
                 <button type="submit" disabled={loading} className="bg-blue-600 text-white px-6 py-2 rounded font-medium hover:bg-blue-700 disabled:opacity-50">
