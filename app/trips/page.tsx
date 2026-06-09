@@ -40,7 +40,7 @@ type Trip = {
   customer_locations: { name: string; address: string | null; contact_person: string | null; contact_number: string | null } | null;
   locations: { name: string; address: string | null } | null;
   weigh_bridge: { net_weight: number }[];
-  trip_bins: { id: string; bin_id: string; action: string; bins: { serial_number: string } | null }[];
+  trip_bins: { id: string; bin_id: string; action: string; removed_at: string | null; bins: { serial_number: string } | null }[];
 };
 
 type Vehicle = { plate_number: string };
@@ -211,7 +211,7 @@ export default function TripsPage() {
   const fetchTrips = async () => {
     const { data } = await supabase
       .from('trips')
-      .select('id, vehicle_number, driver_id, customer_id, customer_location_id, dropoff_id, source_location_id, trip_type, requester, remarks, status, trip_order, trip_date, created_at, completed_at, customers(name, address, contact_person, contact_number), customer_locations(name, address, contact_person, contact_number), locations(name, address), weigh_bridge(net_weight), trip_bins(id, bin_id, action, bins(serial_number))')
+      .select('id, vehicle_number, driver_id, customer_id, customer_location_id, dropoff_id, source_location_id, trip_type, requester, remarks, status, trip_order, trip_date, created_at, completed_at, customers(name, address, contact_person, contact_number), customer_locations(name, address, contact_person, contact_number), locations(name, address), weigh_bridge(net_weight), trip_bins(id, bin_id, action, removed_at, bins(serial_number))')
       .order('created_at', { ascending: false });
     if (data) setTrips(data as unknown as Trip[]);
   };
@@ -298,7 +298,7 @@ export default function TripsPage() {
       requester: trip.requester ?? '',
       remarks: trip.remarks ?? '',
     });
-    setBinActions(trip.trip_bins.map(tb => ({ bin_id: tb.bin_id, action: tb.action as 'dropoff' | 'pickup' | 'roundtrip' })));
+    setBinActions(trip.trip_bins.filter(tb => !tb.removed_at).map(tb => ({ bin_id: tb.bin_id, action: tb.action as 'dropoff' | 'pickup' | 'roundtrip' })));
     setEditingTrip(trip);
     setShowNewCustomer(false);
     setNewCustomerForm(emptyCustomerForm);
@@ -417,7 +417,7 @@ export default function TripsPage() {
     if (error) { alert('Error updating trip: ' + error.message); return; }
 
     const yardId = trip.dropoff_id ? Number(trip.dropoff_id) : (trip.source_location_id ? Number(trip.source_location_id) : null);
-    for (const tb of trip.trip_bins) {
+    for (const tb of trip.trip_bins.filter(tb => !tb.removed_at)) {
       if (tb.action === 'pickup' || tb.action === 'roundtrip') {
         await supabase.from('bins').update({
           location_id: yardId,

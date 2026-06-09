@@ -21,6 +21,7 @@ type Bin = {
 type HistoryEntry = {
   id: string;
   action: 'pickup' | 'dropoff' | 'roundtrip';
+  removed_at: string | null;
   sortDate: string;
   trips: {
     id: string;
@@ -70,7 +71,7 @@ export default function BinHistoryPage() {
         supabase.from('drivers').select('employee_id, name').order('name'),
         supabase
           .from('trip_bins')
-          .select('id, action, trips!inner(id, vehicle_number, driver_id, trip_date, completed_at, customers(name), customer_locations(name), locations!dropoff_id(name))')
+          .select('id, action, removed_at, trips!inner(id, vehicle_number, driver_id, trip_date, completed_at, customers(name), customer_locations(name), locations!dropoff_id(name))')
           .eq('bin_id', binId)
           .eq('trips.status', 'completed'),
       ]);
@@ -101,7 +102,7 @@ export default function BinHistoryPage() {
 
   const displayed = newestFirst ? entries : [...entries].reverse();
 
-  const lastDropoffDate = entries.find(e => e.action === 'dropoff')?.sortDate ?? null;
+  const lastDropoffDate = entries.find(e => e.action === 'dropoff' && !e.removed_at)?.sortDate ?? null;
 
   if (loading) {
     return (
@@ -201,8 +202,9 @@ export default function BinHistoryPage() {
               const date = entry.trips?.trip_date ?? entry.trips?.completed_at?.slice(0, 10) ?? null;
               const isDropoff = entry.action === 'dropoff';
               const isPickup  = entry.action === 'pickup';
-              const dotColor  = isDropoff ? 'bg-blue-100 text-blue-700' : isPickup ? 'bg-orange-100 text-orange-700' : 'bg-purple-100 text-purple-700';
-              const tagColor  = isDropoff ? 'bg-blue-50 text-blue-700'  : isPickup ? 'bg-orange-50 text-orange-700'  : 'bg-purple-50 text-purple-700';
+              const isRemoved = !!entry.removed_at;
+              const dotColor  = isRemoved ? 'bg-gray-100 text-gray-400' : isDropoff ? 'bg-blue-100 text-blue-700' : isPickup ? 'bg-orange-100 text-orange-700' : 'bg-purple-100 text-purple-700';
+              const tagColor  = isRemoved ? 'bg-gray-100 text-gray-400' : isDropoff ? 'bg-blue-50 text-blue-700'  : isPickup ? 'bg-orange-50 text-orange-700'  : 'bg-purple-50 text-purple-700';
               const dotSymbol = isDropoff ? '↓' : isPickup ? '↑' : '↕';
               const actionLabel = isDropoff ? 'Issued to customer' : isPickup ? 'Collected from customer' : 'Roundtrip';
 
@@ -211,9 +213,12 @@ export default function BinHistoryPage() {
                   <div className={`mt-1 w-6 h-6 rounded-full flex items-center justify-center shrink-0 z-10 text-xs font-bold ${dotColor}`}>
                     {dotSymbol}
                   </div>
-                  <div className="flex-1 border rounded-lg px-3 py-2.5 text-sm bg-white">
+                  <div className={`flex-1 border rounded-lg px-3 py-2.5 text-sm bg-white ${isRemoved ? 'opacity-50' : ''}`}>
                     <div className="flex items-center justify-between mb-1">
-                      <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${tagColor}`}>{actionLabel}</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${tagColor}`}>{actionLabel}</span>
+                        {isRemoved && <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-red-50 text-red-500 line-through">Removed</span>}
+                      </div>
                       <span className="text-xs text-gray-400">{formatDate(date)}</span>
                     </div>
                     <div className="text-gray-600 space-y-0.5 mt-1.5">
