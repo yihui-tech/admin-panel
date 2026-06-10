@@ -363,7 +363,9 @@ export default function BinsPage() {
                     })()}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
-                    {days ? (
+                    {bin.status === 'rented' ? (
+                      <span className="text-gray-300 text-xs">—</span>
+                    ) : days ? (
                       <span className={`text-xs font-medium px-2 py-1 rounded ${
                         days === 'Today' ? 'bg-green-50 text-green-700' :
                         parseInt(days) >= 14 ? 'bg-red-50 text-red-700' :
