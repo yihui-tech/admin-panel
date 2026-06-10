@@ -4,20 +4,25 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { FolderKanban, Truck } from 'lucide-react';
+import { FolderKanban, Truck, Package, ShieldCheck } from 'lucide-react';
 import { createBrowserClient } from '@supabase/ssr';
 
 const projectsLinks = [
   { href: '/projects', label: 'Projects' },
   { href: '/assignments', label: 'Assignments' },
   { href: '/timesheets', label: 'Timesheets' },
+  { href: '/cost', label: 'Cost Dashboard' },
 ];
 
 const tripsLinks = [
-  { href: '/bins', label: 'Bins' },
+  { href: '/trips', label: 'Trips' },
   { href: '/customers', label: 'Customers' },
-  { href: '/analytics', label: 'Analytics' },
   { href: '/reporting', label: 'Reporting' },
+];
+
+const binsLinks = [
+  { href: '/bins', label: 'Bins' },
+  { href: '/analytics', label: 'Analytics' },
 ];
 
 export default function Nav() {
@@ -90,7 +95,25 @@ export default function Nav() {
         <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Trips</span>
       </div>
       {tripsLinks.map(l => navLink(l.href, l.label))}
-      {isSuper && navLink('/staff', 'Staff')}
+
+      <div className="w-px h-5 bg-gray-200 mx-1" />
+
+      <div className="flex items-center gap-1.5">
+        <Package size={13} className="text-gray-400" />
+        <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Bins</span>
+      </div>
+      {binsLinks.map(l => navLink(l.href, l.label))}
+
+      {isSuper && (
+        <>
+          <div className="w-px h-5 bg-gray-200 mx-1" />
+          <div className="flex items-center gap-1.5">
+            <ShieldCheck size={13} className="text-gray-400" />
+            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Admin</span>
+          </div>
+          {navLink('/staff', 'Staff')}
+        </>
+      )}
 
       <div className="ml-auto">
         <button
