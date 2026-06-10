@@ -16,7 +16,6 @@ const projectsLinks = [
 
 const tripsLinks = [
   { href: '/trips', label: 'Trips' },
-  { href: '/customers', label: 'Customers' },
   { href: '/reporting', label: 'Reporting' },
 ];
 
@@ -112,6 +111,7 @@ export default function Nav() {
             <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Admin</span>
           </div>
           {navLink('/staff', 'Staff')}
+          {navLink('/customers', 'Customers')}
         </>
       )}
 
