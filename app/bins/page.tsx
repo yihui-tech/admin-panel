@@ -15,6 +15,7 @@ type Bin = {
   type: string | null;
   size: string | null;
   status: string | null;
+  rent_end_date: string | null;
   customers: { name: string } | null;
   customer_locations: { customer_id: number; name: string; customers: { name: string } | null } | null;
   locations: { name: string } | null;
@@ -34,6 +35,7 @@ type BinForm = {
   type: string;
   size: string;
   status: string;
+  rent_end_date: string;
 };
 
 
@@ -46,6 +48,7 @@ const emptyForm: BinForm = {
   type: '',
   size: '',
   status: 'active',
+  rent_end_date: '',
 };
 
 function binToForm(bin: Bin): BinForm {
@@ -61,6 +64,7 @@ function binToForm(bin: Bin): BinForm {
     type: bin.type ?? '',
     size: bin.size ?? '',
     status: bin.status ?? 'active',
+    rent_end_date: bin.rent_end_date ?? '',
   };
 }
 
@@ -71,6 +75,7 @@ function formToPayload(form: BinForm) {
     customer_id: null,
     location_id: form.locationType === 'location' && form.location_id ? parseInt(form.location_id, 10) : null,
     status: form.status || 'active',
+    rent_end_date: form.status === 'rented' && form.rent_end_date ? form.rent_end_date : null,
     type: form.type || null,
     size: form.size || null,
   };
@@ -89,14 +94,14 @@ export default function BinsPage() {
   const [typeFilter, setTypeFilter] = useState('');
   const [sizeFilter, setSizeFilter] = useState('');
   const [sortDays, setSortDays] = useState<'asc' | 'desc' | null>(null);
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'retired'>('active');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'rented' | 'disposed'>('active');
 
   const router = useRouter();
 
   const fetchBins = async () => {
     const { data: rawBins } = await supabase
       .from('bins')
-      .select('id, serial_number, customer_id, customer_location_id, location_id, created_at, type, size, status, customers(name), customer_locations(customer_id, name, customers(name)), locations(name)')
+      .select('id, serial_number, customer_id, customer_location_id, location_id, created_at, type, size, status, rent_end_date, customers(name), customer_locations(customer_id, name, customers(name)), locations(name)')
       .order('serial_number');
     if (!rawBins) return;
 
@@ -214,8 +219,9 @@ export default function BinsPage() {
     if (locationFilter === 'unknown' && (bin.customer_id || bin.customer_location_id || bin.location_id)) return false;
     if (typeFilter && bin.type !== typeFilter) return false;
     if (sizeFilter && bin.size !== sizeFilter) return false;
-    if (statusFilter === 'active' && bin.status === 'retired') return false;
-    if (statusFilter === 'retired' && bin.status !== 'retired') return false;
+    if (statusFilter === 'active' && bin.status !== 'active' && bin.status !== 'rented' && bin.status != null) return false;
+    if (statusFilter === 'rented' && bin.status !== 'rented') return false;
+    if (statusFilter === 'disposed' && bin.status !== 'disposed' && bin.status !== 'retired') return false;
     return true;
   }).sort((a, b) => {
     if (!sortDays) return 0;
@@ -284,12 +290,13 @@ export default function BinsPage() {
 
         <select
           value={statusFilter}
-          onChange={e => setStatusFilter(e.target.value as 'all' | 'active' | 'retired')}
+          onChange={e => setStatusFilter(e.target.value as 'all' | 'active' | 'rented' | 'disposed')}
           className="border rounded px-3 py-2 text-sm text-gray-700"
         >
           <option value="all">All Status</option>
-          <option value="active">Active</option>
-          <option value="retired">Retired</option>
+          <option value="active">In Service (Active + Rented)</option>
+          <option value="rented">Rented only</option>
+          <option value="disposed">Disposed</option>
         </select>
       </div>
 
@@ -337,9 +344,23 @@ export default function BinsPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`inline-flex px-2 py-1 rounded text-xs font-medium ${bin.status === 'retired' ? 'bg-gray-100 text-gray-500' : 'bg-green-50 text-green-700'}`}>
-                      {bin.status === 'retired' ? 'Retired' : 'Active'}
+                    <span className={`inline-flex px-2 py-1 rounded text-xs font-medium ${
+                      bin.status === 'disposed' || bin.status === 'retired' ? 'bg-gray-100 text-gray-500' :
+                      bin.status === 'rented' ? 'bg-blue-50 text-blue-700' :
+                      'bg-green-50 text-green-700'
+                    }`}>
+                      {bin.status === 'disposed' || bin.status === 'retired' ? 'Disposed' :
+                       bin.status === 'rented' ? 'Rented' : 'Active'}
                     </span>
+                    {bin.status === 'rented' && bin.rent_end_date && (() => {
+                      const daysLeft = Math.ceil((new Date(bin.rent_end_date).getTime() - Date.now()) / 86_400_000);
+                      return (
+                        <div className={`text-xs mt-0.5 ${daysLeft < 0 ? 'text-red-500' : daysLeft <= 30 ? 'text-orange-500' : 'text-gray-400'}`}>
+                          Until {new Date(bin.rent_end_date).toLocaleDateString('en-SG', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          {daysLeft < 0 ? ' (expired)' : daysLeft === 0 ? ' (today)' : ` (${daysLeft}d)`}
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     {days ? (
@@ -458,9 +479,23 @@ export default function BinsPage() {
                 <label className="block text-sm font-medium mb-1">Status</label>
                 <select name="status" value={form.status} onChange={handleChange} className="w-full border rounded px-3 py-2">
                   <option value="active">Active</option>
-                  <option value="retired">Retired</option>
+                  <option value="rented">Rented</option>
+                  <option value="disposed">Disposed</option>
                 </select>
               </div>
+
+              {form.status === 'rented' && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">Contract End Date</label>
+                  <input
+                    type="date"
+                    name="rent_end_date"
+                    value={form.rent_end_date}
+                    onChange={handleChange}
+                    className="w-full border rounded px-3 py-2"
+                  />
+                </div>
+              )}
 
               <div className="flex gap-3 pt-2">
                 <button type="submit" disabled={loading} className="bg-blue-600 text-white px-6 py-2 rounded font-medium hover:bg-blue-700 disabled:opacity-50">
