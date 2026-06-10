@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabase } from '../lib/supabase';
 
 type AnalyticsRow = {
@@ -15,6 +16,14 @@ type AnalyticsRow = {
 };
 
 type SortCol = 'bins' | 'oldest' | 'swaps' | 'issues' | 'avg';
+
+type RentalBin = {
+  id: string;
+  serial_number: string;
+  rent_end_date: string | null;
+  customers: { name: string } | null;
+  customer_locations: { name: string } | null;
+};
 
 function todayStr(): string {
   return new Date().toISOString().split('T')[0];
@@ -42,22 +51,29 @@ const QUICK: { label: string; from: () => string; to: () => string }[] = [
 ];
 
 export default function AnalyticsPage() {
-  const [rows, setRows]         = useState<AnalyticsRow[]>([]);
-  const [loading, setLoading]   = useState(true);
-  const [fromDate, setFromDate] = useState(monthStartStr());
-  const [toDate, setToDate]     = useState(todayStr());
-  const [sortCol, setSortCol]   = useState<SortCol>('bins');
-  const [expanded, setExpanded] = useState<Record<number, boolean>>({});
+  const router = useRouter();
+  const [rows, setRows]           = useState<AnalyticsRow[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [fromDate, setFromDate]   = useState(monthStartStr());
+  const [toDate, setToDate]       = useState(todayStr());
+  const [sortCol, setSortCol]     = useState<SortCol>('bins');
+  const [expanded, setExpanded]   = useState<Record<number, boolean>>({});
+  const [rentals, setRentals]     = useState<RentalBin[]>([]);
 
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
-      const { data, error } = await supabase.rpc('bin_analytics', {
-        from_date: fromDate,
-        to_date:   toDate,
-      });
-      if (error) console.error('bin_analytics RPC error:', error);
-      setRows((data ?? []) as AnalyticsRow[]);
+      const [rpcResult, rentalResult] = await Promise.all([
+        supabase.rpc('bin_analytics', { from_date: fromDate, to_date: toDate }),
+        supabase
+          .from('bins')
+          .select('id, serial_number, rent_end_date, customers(name), customer_locations(name)')
+          .eq('status', 'rented')
+          .order('rent_end_date', { ascending: true }),
+      ]);
+      if (rpcResult.error) console.error('bin_analytics RPC error:', rpcResult.error);
+      setRows((rpcResult.data ?? []) as AnalyticsRow[]);
+      setRentals((rentalResult.data ?? []) as unknown as RentalBin[]);
       setLoading(false);
     };
     fetchData();
@@ -254,6 +270,82 @@ export default function AnalyticsPage() {
           </table>
         </div>
       )}
+
+      {/* Rental Contracts */}
+      {!loading && rentals.length > 0 && (() => {
+        const today = todayStr();
+        const in30 = new Date(); in30.setDate(in30.getDate() + 30);
+        const in30Str = in30.toISOString().split('T')[0];
+        const expired  = rentals.filter(r => r.rent_end_date && r.rent_end_date < today);
+        const expiring = rentals.filter(r => r.rent_end_date && r.rent_end_date >= today && r.rent_end_date <= in30Str);
+        const active   = rentals.filter(r => !r.rent_end_date || r.rent_end_date > in30Str);
+
+        const fmtDate = (d: string) =>
+          new Date(d).toLocaleDateString('en-SG', { day: '2-digit', month: 'short', year: 'numeric' });
+
+        const RentalRow = ({ r }: { r: RentalBin }) => {
+          const daysLeft = r.rent_end_date
+            ? Math.ceil((new Date(r.rent_end_date).getTime() - Date.now()) / 86_400_000)
+            : null;
+          return (
+            <tr className="border-b last:border-0 hover:bg-gray-50 cursor-pointer" onClick={() => router.push(`/bins/${r.id}`)}>
+              <td className="px-4 py-2.5 font-medium">{r.serial_number}</td>
+              <td className="px-4 py-2.5 text-gray-600">{r.customers?.name ?? '—'}</td>
+              <td className="px-4 py-2.5 text-gray-600">{r.customer_locations?.name ?? '—'}</td>
+              <td className="px-4 py-2.5 text-right tabular-nums">
+                {r.rent_end_date ? (
+                  <span className={`font-semibold ${daysLeft !== null && daysLeft < 0 ? 'text-red-600' : daysLeft !== null && daysLeft <= 30 ? 'text-orange-500' : 'text-gray-700'}`}>
+                    {fmtDate(r.rent_end_date)}
+                    {daysLeft !== null && (
+                      <span className="font-normal text-xs ml-1">
+                        {daysLeft < 0 ? `(${Math.abs(daysLeft)}d overdue)` : daysLeft === 0 ? '(today)' : `(${daysLeft}d)`}
+                      </span>
+                    )}
+                  </span>
+                ) : <span className="text-gray-300">No end date</span>}
+              </td>
+            </tr>
+          );
+        };
+
+        const Section = ({ title, bins, color }: { title: string; bins: RentalBin[]; color: string }) =>
+          bins.length === 0 ? null : (
+            <>
+              <tr className="bg-gray-50 border-b border-t">
+                <td colSpan={4} className={`px-4 py-2 text-xs font-semibold uppercase tracking-wide ${color}`}>
+                  {title} ({bins.length})
+                </td>
+              </tr>
+              {bins.map(r => <RentalRow key={r.id} r={r} />)}
+            </>
+          );
+
+        return (
+          <div className="mt-10">
+            <h2 className="text-base font-semibold mb-1 text-gray-700">Rental Contracts</h2>
+            <p className="text-xs text-gray-400 mb-4">
+              Bins with status Rented. Location and tracking continue normally after expiry — this is for visibility only. Click a row to view bin history.
+            </p>
+            <div className="bg-white border rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b">
+                  <tr>
+                    <th className="text-left px-4 py-3 font-medium">Bin No.</th>
+                    <th className="text-left px-4 py-3 font-medium">Customer</th>
+                    <th className="text-left px-4 py-3 font-medium">Site</th>
+                    <th className="text-right px-4 py-3 font-medium">Contract End</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <Section title="Expired" bins={expired} color="text-red-600" />
+                  <Section title="Expiring within 30 days" bins={expiring} color="text-orange-600" />
+                  <Section title="Active" bins={active} color="text-green-700" />
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })()}
     </main>
   );
 }
