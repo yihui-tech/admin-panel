@@ -6,9 +6,11 @@ Admin portal for Yi Hui Tech. See root `../CLAUDE.md` for shared DB schema, arch
 
 ## Project Overview
 
-Two domains:
+Three nav sections:
 1. **Projects** — daily worker assignment, timesheets, rolling labour cost tracking
-2. **Trips** — truck trip dispatch, bin inventory, WhatsApp message generation, drag-to-reorder
+2. **Trips** — truck trip dispatch, WhatsApp message generation, drag-to-reorder, weight reporting
+3. **Bins** — bin inventory, movement history, swap analytics, rental contract tracking
+4. **Admin** (superadmin only) — Staff management, Customer master data
 
 **Production URL:** https://ops.yihui.sg
 **Staging URL:** https://stg.ops.yihui.sg
@@ -97,24 +99,28 @@ npm run lint         # Run ESLint
 middleware.ts                   # Auth guard — protects all routes, redirects to /login
 app/
   components/
-    Nav.tsx                     # Top navigation (Projects | Trips sections) + Sign out button
+    Nav.tsx                     # Top navigation: Projects | Trips | Bins | Admin (superadmin only)
   login/
     page.tsx                    # Login page (email + password via Supabase Auth)
   page.tsx                      # Home dashboard (cost summary + bin locations)
   analytics/
-    page.tsx                    # Bin swap analytics per customer site (week/month toggle)
+    page.tsx                    # Bin swap analytics per customer site + rental contract expiry dashboard
   assignments/
     page.tsx                    # Daily worker assignment
   bins/
-    page.tsx                    # Bin inventory (CRUD + filters + days at site)
+    page.tsx                    # Bin inventory (CRUD + status/location filters + days at site)
+    [binId]/
+      page.tsx                  # Bin movement history — timeline of all completed trip actions
   cost/
     page.tsx                    # Rolling cost dashboard per project
   customers/
-    page.tsx                    # Customer CRUD + multi-site management
+    page.tsx                    # Customer CRUD + multi-site management (Admin section — superadmin only)
   projects/
     page.tsx                    # Project CRUD
   reporting/
     page.tsx                    # Trip weight reporting — date range + material filter, weight summaries
+  staff/
+    page.tsx                    # Staff management — assign yards to users (Admin section — superadmin only)
   timesheets/
     page.tsx                    # Timesheet entry per worker per project
   trips/
@@ -188,18 +194,34 @@ All routes are protected by `middleware.ts` using `@supabase/ssr`:
 - Weigh bridge loads shown per trip: net weight, internal net (if rubbish recorded), total adjustments (rubbish + FOC)
 
 ### /bins
-- Full CRUD via modal: serial number, type, size, unit weight, status, remarks, location
-- Filter tabs: All / At Customer / At Yard / Unknown — each tab shows a live count e.g. `All (42)`
-- **Days at Site** — elapsed days since the most recent completed dropoff trip's `trip_date` (falls back to `completed_at` for legacy trips); sortable asc/desc by clicking the column header
+- Full CRUD via modal: serial number, type, size, unit weight, status, contract end date, remarks, location
+- **Status values:** Active | Rented | Disposed (legacy `retired` treated as Disposed)
+  - Rented: shows a blue badge + contract end date with countdown (red = expired, orange = ≤30 days, gray = active)
+  - Contract End Date input only shown when status is Rented
+- **Status filter:** In Service (Active + Rented) / Rented only / Disposed (separate from location tabs)
+- **Location filter tabs:** All / At Customer / At Yard / Unknown — each tab shows a live count e.g. `All (42)`
+- **Days at Site** — elapsed days since the most recent completed dropoff trip's `trip_date` (falls back to `completed_at` for legacy trips); sortable asc/desc by clicking the column header; shows `—` for rented bins
 - Colour coding: green = today, gray = <7d, orange = 7–13d, red = 14+d
 - Location badge: blue = customer site, green = yard, gray = unknown
+- Clock icon links to `/bins/[binId]` movement history page
+
+### /bins/[binId]
+- Movement history timeline for a single bin: all completed trip actions (dropoff / pickup / roundtrip)
+- Soft-deleted rows (`removed_at` set) shown dimmed with a "Removed" badge
+- Sort toggle: newest first / oldest first
+- Header shows current bin status, location, and days since last dropoff
 
 ### /customers
-- Customer CRUD
-- **Manage Sites** (pin icon) — modal to create/edit/delete `customer_locations` per customer
+- Customer CRUD + **Manage Sites** (pin icon) — modal to create/edit/delete `customer_locations` per customer
+- **Admin section only** — visible to superadmins via the Admin nav group
 
 ### /analytics
-- Bin swap analytics: dropoff counts per customer site, week/month toggle, bar chart
+- Bin swap analytics: dropoff counts per customer site, week/month toggle, bar chart (calls `bin_analytics` RPC)
+- **Rental Contracts** section at bottom — only shown when rented bins exist; grouped into:
+  - Expired (past `rent_end_date`)
+  - Expiring within 30 days
+  - Active (>30 days remaining or no end date)
+- Rental rows are clickable → navigates to `/bins/[binId]` history page
 
 ### /reporting
 - Filters: date range (from/to, defaults to current month), company dropdown, yard dropdown, material type dropdown
@@ -223,7 +245,7 @@ Icons — use `lucide-react`, no inline SVGs:
 - History: `<Clock size={14} />`, button `hover:text-purple-600 hover:bg-purple-50`
 - All icon buttons base class: `p-1.5 text-gray-400 rounded`
 
-Nav section icons: `<FolderKanban>` for Projects, `<Truck>` for Trips
+Nav section icons: `<FolderKanban>` for Projects, `<Truck>` for Trips, `<Package>` for Bins, `<ShieldCheck>` for Admin
 
 ---
 
