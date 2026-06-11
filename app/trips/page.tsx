@@ -218,7 +218,7 @@ export default function TripsPage() {
 
   const fetchLookups = async () => {
     const [v, d, c, cl, l, b] = await Promise.all([
-      supabase.from('vehicles').select('plate_number').order('plate_number'),
+      supabase.from('vehicles').select('plate_number').eq('purpose', 'Goods').order('plate_number'),
       supabase.from('drivers').select('employee_id, name').order('name'),
       supabase.from('customers').select('customer_id, name, address').order('name'),
       supabase.from('customer_locations').select('id, customer_id, name, address, contact_person, contact_number').order('name'),
