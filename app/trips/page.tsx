@@ -29,8 +29,10 @@ type Trip = {
   driver_id: string | null;
   customer_id: string | null;
   customer_location_id: number | null;
+  customer_vehicle_plate: string | null;
   dropoff_id: string | null;
   source_location_id: string | null;
+  outbound_location_id: number | null;
   trip_type: string | null;
   requester: string | null;
   remarks: string | null;
@@ -42,6 +44,7 @@ type Trip = {
   customers: { name: string; address: string | null; contact_person: string | null; contact_number: string | null } | null;
   customer_locations: { name: string; address: string | null; contact_person: string | null; contact_number: string | null } | null;
   locations: { name: string; address: string | null } | null;
+  outbound_locations: { name: string } | null;
   weigh_bridge: { net_weight: number }[];
   trip_bins: { id: string; bin_id: string; action: string; removed_at: string | null; bins: { serial_number: string } | null }[];
 };
@@ -52,14 +55,20 @@ type CustomerOption = { customer_id: number; name: string; address: string | nul
 type CustomerLocationOption = { id: number; customer_id: number; name: string; address: string | null; contact_person: string | null; contact_number: string | null };
 type LocationOption = { id: number; name: string; address: string | null };
 type BinOption = { id: string; serial_number: string; customer_id: number | null; location_id: number | null; customer_location_id: number | null };
+type OutboundLocationOption = { id: number; name: string };
 type BinAction = { bin_id: string; action: 'dropoff' | 'pickup' | 'roundtrip'; location_override?: boolean };
 
 const emptyForm = {
+  trip_type: 'collection',
+  trip_date: new Date().toISOString().slice(0, 10),
   vehicle_number: '',
   driver_id: '',
   customer_id: '',
   customer_location_id: '',
+  customer_vehicle_plate: '',
   dropoff_id: '',
+  source_location_id: '',
+  outbound_location_id: '',
   requester: '',
   remarks: '',
 };
@@ -189,6 +198,7 @@ function TripsPage() {
   const [customerLocationOptions, setCustomerLocationOptions] = useState<CustomerLocationOption[]>([]);
   const [locationOptions, setLocationOptions] = useState<LocationOption[]>([]);
   const [binOptions, setBinOptions] = useState<BinOption[]>([]);
+  const [outboundLocationOptions, setOutboundLocationOptions] = useState<OutboundLocationOption[]>([]);
 
   const [showModal, setShowModal] = useState(false);
   const [editingTrip, setEditingTrip] = useState<Trip | null>(null);
@@ -219,18 +229,19 @@ function TripsPage() {
   const fetchTrips = async () => {
     const { data } = await supabase
       .from('trips')
-      .select('id, vehicle_number, driver_id, customer_id, customer_location_id, dropoff_id, source_location_id, trip_type, requester, remarks, status, trip_order, trip_date, created_at, completed_at, customers(name, address, contact_person, contact_number), customer_locations(name, address, contact_person, contact_number), locations(name, address), weigh_bridge(net_weight), trip_bins(id, bin_id, action, removed_at, bins(serial_number))')
+      .select('id, vehicle_number, driver_id, customer_id, customer_location_id, customer_vehicle_plate, dropoff_id, source_location_id, outbound_location_id, trip_type, requester, remarks, status, trip_order, trip_date, created_at, completed_at, customers(name, address, contact_person, contact_number), customer_locations(name, address, contact_person, contact_number), locations(name, address), outbound_locations(name), weigh_bridge(net_weight), trip_bins(id, bin_id, action, removed_at, bins(serial_number))')
       .order('created_at', { ascending: false });
     if (data) setTrips(data as unknown as Trip[]);
   };
 
   const fetchLookups = async () => {
-    const [v, d, c, cl, l, b] = await Promise.all([
+    const [v, d, c, cl, l, ol, b] = await Promise.all([
       supabase.from('vehicles').select('plate_number').eq('purpose', 'Goods').order('plate_number'),
       supabase.from('drivers').select('employee_id, name').order('name'),
       supabase.from('customers').select('customer_id, name, address').order('name'),
       supabase.from('customer_locations').select('id, customer_id, name, address, contact_person, contact_number').order('name'),
       supabase.from('locations').select('id, name, address').order('name'),
+      supabase.from('outbound_locations').select('id, name').order('name'),
       supabase.from('bins').select('id, serial_number, customer_id, location_id, customer_location_id').order('serial_number'),
     ]);
     if (v.data) setVehicles(v.data);
@@ -238,6 +249,7 @@ function TripsPage() {
     if (c.data) setCustomerOptions(c.data);
     if (cl.data) setCustomerLocationOptions(cl.data);
     if (l.data) setLocationOptions(l.data);
+    if (ol.data) setOutboundLocationOptions(ol.data);
     if (b.data) setBinOptions(b.data);
   };
 
@@ -309,11 +321,16 @@ function TripsPage() {
 
   const openEdit = (trip: Trip) => {
     setForm({
-      vehicle_number: trip.vehicle_number,
+      trip_type: trip.trip_type ?? 'collection',
+      trip_date: trip.trip_date ?? new Date().toISOString().slice(0, 10),
+      vehicle_number: trip.vehicle_number ?? '',
       driver_id: trip.driver_id ?? '',
       customer_id: trip.customer_id != null ? String(trip.customer_id) : '',
       customer_location_id: trip.customer_location_id != null ? String(trip.customer_location_id) : '',
+      customer_vehicle_plate: trip.customer_vehicle_plate ?? '',
       dropoff_id: trip.dropoff_id != null ? String(trip.dropoff_id) : '',
+      source_location_id: trip.source_location_id != null ? String(trip.source_location_id) : '',
+      outbound_location_id: trip.outbound_location_id != null ? String(trip.outbound_location_id) : '',
       requester: trip.requester ?? '',
       remarks: trip.remarks ?? '',
     });
@@ -385,12 +402,19 @@ function TripsPage() {
 
     setLoading(true);
 
+    const isOutbound = form.trip_type === 'outbound';
+    const isCustomerDropoff = form.trip_type === 'customer_dropoff';
     const payload = {
-      vehicle_number: form.vehicle_number,
-      driver_id: form.driver_id || null,
+      trip_type: form.trip_type,
+      trip_date: form.trip_date || null,
+      vehicle_number: isCustomerDropoff ? null : form.vehicle_number,
+      driver_id: isCustomerDropoff ? null : (form.driver_id || null),
       customer_id: form.customer_id ? parseInt(form.customer_id, 10) : null,
       customer_location_id: form.customer_location_id ? parseInt(form.customer_location_id, 10) : null,
-      dropoff_id: form.dropoff_id ? parseInt(form.dropoff_id, 10) : null,
+      customer_vehicle_plate: isCustomerDropoff ? (form.customer_vehicle_plate || null) : null,
+      dropoff_id: !isOutbound ? (form.dropoff_id ? parseInt(form.dropoff_id, 10) : null) : null,
+      source_location_id: isOutbound ? (form.source_location_id ? parseInt(form.source_location_id, 10) : null) : null,
+      outbound_location_id: isOutbound ? (form.outbound_location_id ? parseInt(form.outbound_location_id, 10) : null) : null,
       requester: form.requester || null,
       remarks: form.remarks || null,
     };
@@ -610,102 +634,141 @@ function TripsPage() {
             <h2 className="text-lg font-semibold mb-4">{editingTrip ? 'Edit Trip' : 'New Trip'}</h2>
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Vehicle</label>
-                <select name="vehicle_number" value={form.vehicle_number} onChange={handleChange} required className="w-full border rounded px-3 py-2">
-                  <option value="">Select vehicle</option>
-                  {vehicles.map(v => <option key={v.plate_number} value={v.plate_number}>{v.plate_number}</option>)}
-                </select>
+
+              {/* Trip type selector */}
+              <div className="flex gap-2 flex-wrap">
+                {([
+                  ['collection', 'Collection', 'bg-blue-600'],
+                  ['outbound', 'Outbound', 'bg-orange-500'],
+                  ['customer_dropoff', 'Customer Drop-off', 'bg-purple-600'],
+                  ['issue_bin', 'Issue Bin', 'bg-green-600'],
+                ] as const).map(([value, label, activeColor]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setForm(prev => ({ ...emptyForm, trip_type: value, trip_date: prev.trip_date }))}
+                    className={`px-3 py-1.5 rounded text-sm font-medium ${form.trip_type === value ? `${activeColor} text-white` : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
 
+              {/* Trip date */}
               <div>
-                <label className="block text-sm font-medium mb-1">Driver</label>
-                <select name="driver_id" value={form.driver_id} onChange={handleChange} className="w-full border rounded px-3 py-2">
-                  <option value="">— No driver —</option>
-                  {drivers.map(d => <option key={d.employee_id} value={d.employee_id}>{d.name} ({d.employee_id})</option>)}
-                </select>
+                <label className="block text-sm font-medium mb-1">Trip Date</label>
+                <input type="date" name="trip_date" value={form.trip_date} onChange={handleChange} required className="w-full border rounded px-3 py-2" />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-1">Customer</label>
-                <select
-                  name="customer_id"
-                  value={showNewCustomer ? '__new__' : form.customer_id}
-                  onChange={handleChange}
-                  className="w-full border rounded px-3 py-2"
-                >
-                  <option value="">— No customer —</option>
-                  {customerOptions.map(c => <option key={c.customer_id} value={String(c.customer_id)}>{c.name}</option>)}
-                  <option value="__new__">+ Create new customer…</option>
-                </select>
-
-                {!showNewCustomer && form.customer_id && sitesForCustomer.length > 0 && (
-                  <div className="mt-2">
-                    <select
-                      name="customer_location_id"
-                      value={form.customer_location_id}
-                      onChange={handleChange}
-                      className="w-full border rounded px-3 py-2"
-                    >
-                      <option value="">— Select site —</option>
-                      {sitesForCustomer.map(s => (
-                        <option key={s.id} value={String(s.id)}>{s.name}</option>
-                      ))}
+              {/* Vehicle + Driver (all except customer_dropoff) */}
+              {form.trip_type !== 'customer_dropoff' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Vehicle</label>
+                    <select name="vehicle_number" value={form.vehicle_number} onChange={handleChange} required className="w-full border rounded px-3 py-2">
+                      <option value="">Select vehicle</option>
+                      {vehicles.map(v => <option key={v.plate_number} value={v.plate_number}>{v.plate_number}</option>)}
                     </select>
-                    {selectedSite && (
-                      <div className="mt-2 px-3 py-2 bg-gray-50 border rounded text-sm text-gray-600 space-y-0.5">
-                        {selectedSite.address && <div><span className="text-xs font-medium text-gray-400 uppercase tracking-wide mr-2">Address</span>{selectedSite.address}</div>}
-                        {selectedSite.contact_person && <div><span className="text-xs font-medium text-gray-400 uppercase tracking-wide mr-2">Contact</span>{selectedSite.contact_person}{selectedSite.contact_number ? ` · ${selectedSite.contact_number}` : ''}</div>}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Driver</label>
+                    <select name="driver_id" value={form.driver_id} onChange={handleChange} className="w-full border rounded px-3 py-2">
+                      <option value="">— No driver —</option>
+                      {drivers.map(d => <option key={d.employee_id} value={d.employee_id}>{d.name} ({d.employee_id})</option>)}
+                    </select>
+                  </div>
+                </>
+              )}
+
+              {/* Customer Drop-off: vehicle plate */}
+              {form.trip_type === 'customer_dropoff' && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">Customer Vehicle Plate</label>
+                  <input name="customer_vehicle_plate" value={form.customer_vehicle_plate} onChange={handleChange} required placeholder="e.g. SBX1234A" className="w-full border rounded px-3 py-2" />
+                </div>
+              )}
+
+              {/* Outbound: From Yard + To Destination */}
+              {form.trip_type === 'outbound' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">From Yard</label>
+                    <select name="source_location_id" value={form.source_location_id} onChange={handleChange} required className="w-full border rounded px-3 py-2">
+                      <option value="">Select yard</option>
+                      {locationOptions.map(l => <option key={l.id} value={String(l.id)}>{l.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">To Destination</label>
+                    <select name="outbound_location_id" value={form.outbound_location_id} onChange={handleChange} required className="w-full border rounded px-3 py-2">
+                      <option value="">Select destination</option>
+                      {outboundLocationOptions.map(l => <option key={l.id} value={String(l.id)}>{l.name}</option>)}
+                    </select>
+                  </div>
+                </>
+              )}
+
+              {/* Collection / Customer Drop-off / Issue Bin: Customer + Site */}
+              {form.trip_type !== 'outbound' && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">Customer</label>
+                  <select
+                    name="customer_id"
+                    value={showNewCustomer ? '__new__' : form.customer_id}
+                    onChange={handleChange}
+                    className="w-full border rounded px-3 py-2"
+                  >
+                    <option value="">— No customer —</option>
+                    {customerOptions.map(c => <option key={c.customer_id} value={String(c.customer_id)}>{c.name}</option>)}
+                    <option value="__new__">+ Create new customer…</option>
+                  </select>
+
+                  {!showNewCustomer && form.customer_id && sitesForCustomer.length > 0 && (
+                    <div className="mt-2">
+                      <select name="customer_location_id" value={form.customer_location_id} onChange={handleChange} className="w-full border rounded px-3 py-2">
+                        <option value="">— Select site —</option>
+                        {sitesForCustomer.map(s => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
+                      </select>
+                      {selectedSite && (
+                        <div className="mt-2 px-3 py-2 bg-gray-50 border rounded text-sm text-gray-600 space-y-0.5">
+                          {selectedSite.address && <div><span className="text-xs font-medium text-gray-400 uppercase tracking-wide mr-2">Address</span>{selectedSite.address}</div>}
+                          {selectedSite.contact_person && <div><span className="text-xs font-medium text-gray-400 uppercase tracking-wide mr-2">Contact</span>{selectedSite.contact_person}{selectedSite.contact_number ? ` · ${selectedSite.contact_number}` : ''}</div>}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {showNewCustomer && (
+                    <div className="mt-3 p-4 border border-blue-200 rounded-lg bg-blue-50 space-y-3">
+                      <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">New Customer</p>
+                      <div><label className="block text-sm font-medium mb-1">Company Name</label><input value={newCustomerForm.name} onChange={e => setNewCustomerForm(prev => ({ ...prev, name: e.target.value }))} className="w-full border rounded px-3 py-2 bg-white" /></div>
+                      <div><label className="block text-sm font-medium mb-1">Address</label><input value={newCustomerForm.address} onChange={e => setNewCustomerForm(prev => ({ ...prev, address: e.target.value }))} className="w-full border rounded px-3 py-2 bg-white" /></div>
+                      <div><label className="block text-sm font-medium mb-1">Contact Person</label><input value={newCustomerForm.contact_person} onChange={e => setNewCustomerForm(prev => ({ ...prev, contact_person: e.target.value }))} className="w-full border rounded px-3 py-2 bg-white" /></div>
+                      <div><label className="block text-sm font-medium mb-1">Contact Number</label><input value={newCustomerForm.contact_number} onChange={e => setNewCustomerForm(prev => ({ ...prev, contact_number: e.target.value }))} className="w-full border rounded px-3 py-2 bg-white" /></div>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={handleSaveNewCustomer} disabled={savingCustomer || !newCustomerForm.name.trim()} className="bg-blue-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-blue-700 disabled:opacity-50">{savingCustomer ? 'Saving...' : 'Save Customer'}</button>
+                        <button type="button" onClick={() => { setShowNewCustomer(false); setNewCustomerForm(emptyCustomerForm); }} className="border px-4 py-1.5 rounded text-sm font-medium hover:bg-gray-50">Cancel</button>
                       </div>
-                    )}
-                  </div>
-                )}
+                    </div>
+                  )}
+                </div>
+              )}
 
-                {showNewCustomer && (
-                  <div className="mt-3 p-4 border border-blue-200 rounded-lg bg-blue-50 space-y-3">
-                    <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">New Customer</p>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Company Name</label>
-                      <input value={newCustomerForm.name} onChange={e => setNewCustomerForm(prev => ({ ...prev, name: e.target.value }))} className="w-full border rounded px-3 py-2 bg-white" />
+              {/* Delivery location (collection + customer_dropoff only) */}
+              {(form.trip_type === 'collection' || form.trip_type === 'customer_dropoff') && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">Delivery Location</label>
+                  <select name="dropoff_id" value={form.dropoff_id} onChange={handleChange} className="w-full border rounded px-3 py-2">
+                    <option value="">— Select location —</option>
+                    {locationOptions.map(l => <option key={l.id} value={String(l.id)}>{l.name}</option>)}
+                  </select>
+                  {selectedDropoffAddress && (
+                    <div className="mt-2 px-3 py-2 bg-gray-50 border rounded text-sm text-gray-600">
+                      <span className="text-xs font-medium text-gray-400 uppercase tracking-wide mr-2">Address</span>{selectedDropoffAddress}
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Pick up address</label>
-                      <input value={newCustomerForm.address} onChange={e => setNewCustomerForm(prev => ({ ...prev, address: e.target.value }))} className="w-full border rounded px-3 py-2 bg-white" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Contact Person</label>
-                      <input value={newCustomerForm.contact_person} onChange={e => setNewCustomerForm(prev => ({ ...prev, contact_person: e.target.value }))} className="w-full border rounded px-3 py-2 bg-white" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Contact Number</label>
-                      <input value={newCustomerForm.contact_number} onChange={e => setNewCustomerForm(prev => ({ ...prev, contact_number: e.target.value }))} className="w-full border rounded px-3 py-2 bg-white" />
-                    </div>
-                    <div className="flex gap-2">
-                      <button type="button" onClick={handleSaveNewCustomer} disabled={savingCustomer || !newCustomerForm.name.trim()} className="bg-blue-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
-                        {savingCustomer ? 'Saving...' : 'Save Customer'}
-                      </button>
-                      <button type="button" onClick={() => { setShowNewCustomer(false); setNewCustomerForm(emptyCustomerForm); }} className="border px-4 py-1.5 rounded text-sm font-medium hover:bg-gray-50">
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-1">Drop off location</label>
-                <select name="dropoff_id" value={form.dropoff_id} onChange={handleChange} className="w-full border rounded px-3 py-2">
-                  <option value="">— No drop off —</option>
-                  {locationOptions.map(l => <option key={l.id} value={String(l.id)}>{l.name}</option>)}
-                </select>
-
-                {selectedDropoffAddress && (
-                  <div className="mt-2 px-3 py-2 bg-gray-50 border rounded text-sm text-gray-600">
-                    <span className="text-xs font-medium text-gray-400 uppercase tracking-wide mr-2">Drop off address</span>
-                    {selectedDropoffAddress}
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium mb-1">Requester</label>
@@ -717,59 +780,59 @@ function TripsPage() {
                 <textarea name="remarks" value={form.remarks} onChange={handleChange} rows={2} className="w-full border rounded px-3 py-2 resize-none" />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-2">Bin Movements</label>
-                <div className="space-y-2">
-                  {binActions.map((ba, i) => {
-                    const selectedBin = binOptions.find(b => b.id === ba.bin_id);
-                    const conflict = ba.bin_id ? binActionConflict(ba.bin_id, ba.action) : null;
-                    return (
-                      <div key={i} className="space-y-1">
-                        <div className="flex gap-2 items-center">
-                          <select
-                            value={ba.bin_id}
-                            onChange={e => {
-                              const bin = binOptions.find(b => b.id === e.target.value);
-                              const action = bin?.location_id ? 'dropoff' : (bin?.customer_id || bin?.customer_location_id) ? 'pickup' : ba.action;
-                              setBinActions(prev => prev.map((a, j) => j === i ? { ...a, bin_id: e.target.value, action } : a));
-                            }}
-                            className="flex-1 border rounded px-3 py-2 text-sm"
-                          >
-                            <option value="">Select bin</option>
-                            {binOptions.map(b => <option key={b.id} value={b.id}>{b.serial_number}</option>)}
-                          </select>
-                          <select
-                            value={ba.action}
-                            onChange={e => setBinActions(prev => prev.map((a, j) => j === i ? { ...a, action: e.target.value as 'dropoff' | 'pickup' | 'roundtrip' } : a))}
-                            className={`border rounded px-3 py-2 text-sm ${conflict ? 'border-red-400 bg-red-50' : ''}`}
-                          >
-                            <option value="dropoff" disabled={!!(selectedBin && binAtCustomer(selectedBin))}>Drop off</option>
-                            <option value="pickup" disabled={!!(selectedBin && binAtYard(selectedBin))}>Pick up</option>
-                            <option value="roundtrip" disabled={!!(selectedBin && binAtCustomer(selectedBin))}>Roundtrip</option>
-                          </select>
-                          <button
-                            type="button"
-                            onClick={() => setBinActions(prev => prev.filter((_, j) => j !== i))}
-                            className="text-red-500 hover:text-red-700 px-1 text-lg leading-none"
-                          >
-                            ×
-                          </button>
+              {/* Bin movements (not for customer_dropoff) */}
+              {form.trip_type !== 'customer_dropoff' && (
+                <div>
+                  <label className="block text-sm font-medium mb-2">Bin Movements</label>
+                  <div className="space-y-2">
+                    {binActions.map((ba, i) => {
+                      const selectedBin = binOptions.find(b => b.id === ba.bin_id);
+                      const conflict = ba.bin_id && !ba.location_override ? binActionConflict(ba.bin_id, ba.action) : null;
+                      const isIssueBin = form.trip_type === 'issue_bin';
+                      return (
+                        <div key={i} className="space-y-1">
+                          <div className="flex gap-2 items-center">
+                            <select
+                              value={ba.bin_id}
+                              onChange={e => {
+                                const bin = binOptions.find(b => b.id === e.target.value);
+                                const action = isIssueBin ? 'dropoff' : bin?.location_id ? 'dropoff' : (bin?.customer_id || bin?.customer_location_id) ? 'pickup' : ba.action;
+                                setBinActions(prev => prev.map((a, j) => j === i ? { ...a, bin_id: e.target.value, action, location_override: false } : a));
+                              }}
+                              className="flex-1 border rounded px-3 py-2 text-sm"
+                            >
+                              <option value="">Select bin</option>
+                              {binOptions.map(b => <option key={b.id} value={b.id}>{b.serial_number}</option>)}
+                            </select>
+                            {isIssueBin ? (
+                              <span className="border rounded px-3 py-2 text-sm bg-gray-50 text-gray-600 whitespace-nowrap">Issue Bin</span>
+                            ) : (
+                              <select
+                                value={ba.action}
+                                onChange={e => setBinActions(prev => prev.map((a, j) => j === i ? { ...a, action: e.target.value as 'dropoff' | 'pickup' | 'roundtrip', location_override: false } : a))}
+                                className={`border rounded px-3 py-2 text-sm ${conflict ? 'border-red-400 bg-red-50' : ''}`}
+                              >
+                                <option value="dropoff" disabled={!!(selectedBin && binAtCustomer(selectedBin) && !ba.location_override)}>Issue Bin</option>
+                                <option value="pickup" disabled={!!(selectedBin && binAtYard(selectedBin) && !ba.location_override)}>Collect Bin</option>
+                                <option value="roundtrip" disabled={!!(selectedBin && binAtCustomer(selectedBin) && !ba.location_override)}>Roundtrip</option>
+                              </select>
+                            )}
+                            <button type="button" onClick={() => setBinActions(prev => prev.filter((_, j) => j !== i))} className="text-red-500 hover:text-red-700 px-1 text-lg leading-none">×</button>
+                          </div>
+                          {conflict && <p className="text-xs text-red-600 pl-1">{conflict}</p>}
                         </div>
-                        {conflict && (
-                          <p className="text-xs text-red-600 pl-1">{conflict}</p>
-                        )}
-                      </div>
-                    );
-                  })}
-                  <button
-                    type="button"
-                    onClick={() => setBinActions(prev => [...prev, { bin_id: '', action: 'dropoff' }])}
-                    className="text-sm text-blue-600 hover:underline"
-                  >
-                    + Add bin
-                  </button>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      onClick={() => setBinActions(prev => [...prev, { bin_id: '', action: form.trip_type === 'issue_bin' ? 'dropoff' : 'dropoff' }])}
+                      className="text-sm text-blue-600 hover:underline"
+                    >
+                      + Add bin
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="flex gap-3 pt-2">
                 <button type="submit" disabled={loading || showNewCustomer} className="bg-blue-600 text-white px-6 py-2 rounded font-medium hover:bg-blue-700 disabled:opacity-50">
