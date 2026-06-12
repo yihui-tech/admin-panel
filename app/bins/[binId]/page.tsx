@@ -30,7 +30,7 @@ type HistoryEntry = {
     trip_date: string | null;
     completed_at: string | null;
     customers: { name: string } | null;
-    customer_locations: { name: string } | null;
+    customer_locations: { name: string; customers: { name: string } | null } | null;
     locations: { name: string } | null;
   } | null;
 };
@@ -71,7 +71,7 @@ export default function BinHistoryPage() {
         supabase.from('drivers').select('employee_id, name').order('name'),
         supabase
           .from('trip_bins')
-          .select('id, action, removed_at, trips!inner(id, vehicle_number, driver_id, trip_date, completed_at, customers(name), customer_locations(name), locations!dropoff_id(name))')
+          .select('id, action, removed_at, trips!inner(id, vehicle_number, driver_id, trip_date, completed_at, customers(name), customer_locations(name, customers(name)), locations!dropoff_id(name))')
           .eq('bin_id', binId)
           .eq('trips.status', 'completed'),
       ]);
@@ -230,7 +230,9 @@ export default function BinHistoryPage() {
                       {(entry.trips?.customer_locations || entry.trips?.customers) && (
                         <div>
                           <span className="text-gray-400">Customer: </span>
-                          {entry.trips.customer_locations?.name ?? entry.trips.customers?.name}
+                          {entry.trips.customer_locations
+                            ? `${entry.trips.customer_locations.customers?.name ?? ''} · ${entry.trips.customer_locations.name}`
+                            : entry.trips.customers?.name}
                         </div>
                       )}
                       {entry.trips?.locations && (

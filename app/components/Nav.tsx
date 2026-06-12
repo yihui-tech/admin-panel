@@ -4,7 +4,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { FolderKanban, Truck, Package, ShieldCheck } from 'lucide-react';
+import { FolderKanban, Truck, Package, ShieldCheck, BarChart2 } from 'lucide-react';
 import { createBrowserClient } from '@supabase/ssr';
 
 const projectsLinks = [
@@ -28,6 +28,7 @@ export default function Nav() {
   const pathname = usePathname();
   const router = useRouter();
   const [isSuper, setIsSuper] = useState(false);
+  const [isManagement, setIsManagement] = useState(false);
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -40,7 +41,7 @@ export default function Nav() {
       if (!user) return;
       const { data: profile } = await supabase
         .from('user_profiles')
-        .select('is_superadmin')
+        .select('is_superadmin, management')
         .eq('user_id', user.id)
         .single();
       if (!profile) {
@@ -51,6 +52,7 @@ export default function Nav() {
         });
       }
       setIsSuper(profile?.is_superadmin ?? false);
+      setIsManagement(profile?.management ?? false);
     };
     init();
   }, []);
@@ -102,6 +104,18 @@ export default function Nav() {
         <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Bins</span>
       </div>
       {binsLinks.map(l => navLink(l.href, l.label))}
+
+      {isManagement && (
+        <>
+          <div className="w-px h-5 bg-gray-200 mx-1" />
+          <div className="flex items-center gap-1.5">
+            <BarChart2 size={13} className="text-gray-400" />
+            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Reports</span>
+          </div>
+          {navLink('/management/driver-location', 'Driver Location')}
+          {navLink('/management/vehicle-costs', 'Vehicle Costs')}
+        </>
+      )}
 
       {isSuper && (
         <>
