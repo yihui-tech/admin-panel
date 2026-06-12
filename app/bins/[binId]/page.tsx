@@ -37,6 +37,8 @@ type HistoryEntry = {
 
 type OverrideEntry = {
   id: string;
+  from_label: string | null;
+  to_label: string | null;
   note: string | null;
   created_at: string;
   sortDate: string;
@@ -87,7 +89,7 @@ export default function BinHistoryPage() {
           .eq('trips.status', 'completed'),
         supabase
           .from('bin_location_overrides')
-          .select('id, note, created_at')
+          .select('id, from_label, to_label, note, created_at')
           .eq('bin_id', binId),
       ]);
 
@@ -111,6 +113,8 @@ export default function BinHistoryPage() {
       const overrideItems: TimelineItem[] = (overridesResult.data ?? []).map(o => ({
         kind: 'override' as const,
         id: o.id,
+        from_label: (o as unknown as { from_label: string | null }).from_label ?? null,
+        to_label: (o as unknown as { to_label: string | null }).to_label ?? null,
         note: o.note,
         created_at: o.created_at,
         sortDate: o.created_at.slice(0, 10),
@@ -238,7 +242,12 @@ export default function BinHistoryPage() {
                         <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">Location manually corrected</span>
                         <span className="text-xs text-gray-400">{formatDate(item.created_at)}</span>
                       </div>
-                      <p className="text-amber-700 text-xs mt-1">Missing prior trip — location was changed without a trip record.</p>
+                      {(item.from_label || item.to_label) && (
+                        <p className="text-amber-800 text-xs mt-1 font-medium">
+                          {item.from_label ?? '—'} → {item.to_label ?? '—'}
+                        </p>
+                      )}
+                      <p className="text-amber-700 text-xs mt-0.5">Location manually corrected — missing prior trip record.</p>
                       {item.note && <p className="text-gray-600 text-xs mt-0.5">{item.note}</p>}
                     </div>
                   </div>

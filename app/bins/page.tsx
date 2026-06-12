@@ -185,8 +185,29 @@ export default function BinsPage() {
       savedBinId = data?.id;
     }
     if (!error && editingBin && missingTrip && savedBinId) {
+      const fromLabel = (() => {
+        if (editingBin.customer_locations) return `${editingBin.customer_locations.customers?.name ?? ''} · ${editingBin.customer_locations.name}`.trim();
+        if (editingBin.customers) return editingBin.customers.name;
+        if (editingBin.locations) return editingBin.locations.name;
+        return 'Unknown';
+      })();
+      const toLabel = (() => {
+        if (form.locationType === 'customer') {
+          const site = customerLocationOptions.find(l => String(l.id) === form.customer_location_id);
+          const cust = customerOptions.find(c => String(c.customer_id) === form.customer_id);
+          if (site && cust) return `${cust.name} · ${site.name}`;
+          if (cust) return cust.name;
+          return 'Customer site';
+        }
+        if (form.locationType === 'location') {
+          return locationOptions.find(l => String(l.id) === form.location_id)?.name ?? 'Yard';
+        }
+        return 'Unknown';
+      })();
       await supabase.from('bin_location_overrides').insert({
         bin_id: savedBinId,
+        from_label: fromLabel,
+        to_label: toLabel,
         note: missingTripNote || null,
       });
     }

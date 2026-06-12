@@ -6,6 +6,13 @@
 create table if not exists bin_location_overrides (
   id         uuid primary key default gen_random_uuid(),
   bin_id     uuid references bins(id) on delete cascade,
+  from_label text,
+  to_label   text,
   note       text,
   created_at timestamptz default now()
 );
+
+-- If the table was already created without from_label/to_label, add them:
+alter table bin_location_overrides
+  add column if not exists from_label text,
+  add column if not exists to_label   text;
