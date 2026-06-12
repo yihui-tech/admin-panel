@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { supabase } from '../lib/supabase';
 import {
@@ -181,7 +181,7 @@ function SortableTripRow({
   );
 }
 
-export default function TripsPage() {
+function TripsPage() {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
@@ -824,5 +824,13 @@ export default function TripsPage() {
         </div>
       )}
     </main>
+  );
+}
+
+export default function TripsPageWrapper() {
+  return (
+    <Suspense>
+      <TripsPage />
+    </Suspense>
   );
 }
