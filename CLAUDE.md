@@ -6,11 +6,14 @@ Admin portal for Yi Hui Tech. See root `../CLAUDE.md` for shared DB schema, arch
 
 ## Project Overview
 
-Three nav sections:
-1. **Projects** — daily worker assignment, timesheets, rolling labour cost tracking
-2. **Trips** — truck trip dispatch, WhatsApp message generation, drag-to-reorder, weight reporting
-3. **Bins** — bin inventory, movement history, swap analytics, rental contract tracking
-4. **Admin** (superadmin only) — Staff management, Customer master data
+Five nav sections — each gated by `user_module_permissions`:
+1. **Projects** (`projects` module) — daily worker assignment, timesheets
+2. **Trips** (`trips` module) — truck trip dispatch, WhatsApp message generation, drag-to-reorder, weight reporting
+3. **Bins** (`bins` module) — bin inventory, movement history, swap analytics, rental contract tracking
+4. **Reports** (`management` module) — Cost Dashboard, Driver Location, Vehicle Costs
+5. **Admin** (`admin` module) — Staff management, Customer master data
+
+Module permissions are managed on the `/staff` page. New users start with no access until granted.
 
 **Production URL:** https://ops.yihui.sg
 **Staging URL:** https://stg.ops.yihui.sg
@@ -99,7 +102,7 @@ npm run lint         # Run ESLint
 middleware.ts                   # Auth guard — protects all routes, redirects to /login
 app/
   components/
-    Nav.tsx                     # Top navigation: Projects | Trips | Bins | Admin (superadmin only)
+    Nav.tsx                     # Top navigation: Projects | Trips | Bins | Reports (management only) | Admin (superadmin only)
   login/
     page.tsx                    # Login page (email + password via Supabase Auth)
   page.tsx                      # Home dashboard (cost summary + bin locations)
@@ -111,8 +114,11 @@ app/
     page.tsx                    # Bin inventory (CRUD + status/location filters + days at site)
     [binId]/
       page.tsx                  # Bin movement history — timeline of all completed trip actions
-  cost/
-    page.tsx                    # Rolling cost dashboard per project
+  management/
+    cost/
+      page.tsx                  # Rolling cost dashboard per project (Reports section — management only)
+    driver-location/
+      page.tsx                  # Driver location report (Reports section — management only)
   customers/
     page.tsx                    # Customer CRUD + multi-site management (Admin section — superadmin only)
   projects/
@@ -120,7 +126,7 @@ app/
   reporting/
     page.tsx                    # Trip weight reporting — date range + material filter, weight summaries
   staff/
-    page.tsx                    # Staff management — assign yards to users (Admin section — superadmin only)
+    page.tsx                    # Staff management — assign yards + module permissions per user (Admin section)
   timesheets/
     page.tsx                    # Timesheet entry per worker per project
   trips/
@@ -179,10 +185,12 @@ All routes are protected by `middleware.ts` using `@supabase/ssr`:
 - Regular hours + OT hours per worker per project per date
 - Source tracked as `manual`
 
-### /cost
+### /management/cost
 - Toggle This Month / All Time
 - Filter by project status
 - Rolling labour cost per project from timesheets; total summary card
+- Accessible via Reports nav (management users only)
+- Home dashboard "Full dashboard →" links here
 
 ### /trips
 - Create and manage truck dispatch trips

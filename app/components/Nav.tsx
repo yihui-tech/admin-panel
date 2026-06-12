@@ -11,7 +11,6 @@ const projectsLinks = [
   { href: '/projects', label: 'Projects' },
   { href: '/assignments', label: 'Assignments' },
   { href: '/timesheets', label: 'Timesheets' },
-  { href: '/cost', label: 'Cost Dashboard' },
 ];
 
 const tripsLinks = [
@@ -24,11 +23,16 @@ const binsLinks = [
   { href: '/analytics', label: 'Analytics' },
 ];
 
+const reportsLinks = [
+  { href: '/management/cost', label: 'Cost Dashboard' },
+  { href: '/management/driver-location', label: 'Driver Location' },
+  { href: '/management/vehicle-costs', label: 'Vehicle Costs' },
+];
+
 export default function Nav() {
   const pathname = usePathname();
   const router = useRouter();
-  const [isSuper, setIsSuper] = useState(false);
-  const [isManagement, setIsManagement] = useState(false);
+  const [modules, setModules] = useState<Set<string>>(new Set());
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -39,11 +43,13 @@ export default function Nav() {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+
       const { data: profile } = await supabase
         .from('user_profiles')
-        .select('is_superadmin, management')
+        .select('is_superadmin')
         .eq('user_id', user.id)
         .single();
+
       if (!profile) {
         await supabase.from('user_profiles').insert({
           user_id: user.id,
@@ -51,8 +57,13 @@ export default function Nav() {
           is_superadmin: false,
         });
       }
-      setIsSuper(profile?.is_superadmin ?? false);
-      setIsManagement(profile?.management ?? false);
+
+      const { data: perms } = await supabase
+        .from('user_module_permissions')
+        .select('module')
+        .eq('user_id', user.id);
+
+      setModules(new Set(perms?.map(p => p.module) ?? []));
     };
     init();
   }, []);
@@ -83,41 +94,50 @@ export default function Nav() {
         <Image src="/logo.jpg" alt="Yi Hui Tech" width={36} height={36} className="rounded" />
       </Link>
 
-      <div className="flex items-center gap-1.5">
-        <FolderKanban size={13} className="text-gray-400" />
-        <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Projects</span>
-      </div>
-      {projectsLinks.map(l => navLink(l.href, l.label))}
+      {modules.has('projects') && (
+        <>
+          <div className="flex items-center gap-1.5">
+            <FolderKanban size={13} className="text-gray-400" />
+            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Projects</span>
+          </div>
+          {projectsLinks.map(l => navLink(l.href, l.label))}
+        </>
+      )}
 
-      <div className="w-px h-5 bg-gray-200 mx-1" />
+      {modules.has('trips') && (
+        <>
+          <div className="w-px h-5 bg-gray-200 mx-1" />
+          <div className="flex items-center gap-1.5">
+            <Truck size={13} className="text-gray-400" />
+            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Trips</span>
+          </div>
+          {tripsLinks.map(l => navLink(l.href, l.label))}
+        </>
+      )}
 
-      <div className="flex items-center gap-1.5">
-        <Truck size={13} className="text-gray-400" />
-        <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Trips</span>
-      </div>
-      {tripsLinks.map(l => navLink(l.href, l.label))}
+      {modules.has('bins') && (
+        <>
+          <div className="w-px h-5 bg-gray-200 mx-1" />
+          <div className="flex items-center gap-1.5">
+            <Package size={13} className="text-gray-400" />
+            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Bins</span>
+          </div>
+          {binsLinks.map(l => navLink(l.href, l.label))}
+        </>
+      )}
 
-      <div className="w-px h-5 bg-gray-200 mx-1" />
-
-      <div className="flex items-center gap-1.5">
-        <Package size={13} className="text-gray-400" />
-        <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Bins</span>
-      </div>
-      {binsLinks.map(l => navLink(l.href, l.label))}
-
-      {isManagement && (
+      {modules.has('management') && (
         <>
           <div className="w-px h-5 bg-gray-200 mx-1" />
           <div className="flex items-center gap-1.5">
             <BarChart2 size={13} className="text-gray-400" />
             <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Reports</span>
           </div>
-          {navLink('/management/driver-location', 'Driver Location')}
-          {navLink('/management/vehicle-costs', 'Vehicle Costs')}
+          {reportsLinks.map(l => navLink(l.href, l.label))}
         </>
       )}
 
-      {isSuper && (
+      {modules.has('admin') && (
         <>
           <div className="w-px h-5 bg-gray-200 mx-1" />
           <div className="flex items-center gap-1.5">

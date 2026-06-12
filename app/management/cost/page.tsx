@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../../lib/supabase';
 
 type ProjectCost = {
   id: string;
@@ -44,21 +44,19 @@ export default function CostPage() {
       const [year, month] = selectedMonth.split('-').map(Number);
       const workingDays = getWorkingDays(year, month - 1);
 
-      // Fetch all active projects
-let projectQuery = supabase
-  .from('projects')
-  .select('id, name, location, status')
-  .order('name');
+      let projectQuery = supabase
+        .from('projects')
+        .select('id, name, location, status')
+        .order('name');
 
-if (statusFilter !== 'all') {
-  projectQuery = projectQuery.eq('status', statusFilter);
-}
+      if (statusFilter !== 'all') {
+        projectQuery = projectQuery.eq('status', statusFilter);
+      }
 
-const { data: projects } = await projectQuery;
+      const { data: projects } = await projectQuery;
 
       if (!projects) return;
 
-      // Fetch timesheets and assignments for the same period
       let timesheetQuery = supabase
         .from('timesheets')
         .select('project_id, worker_id, regular_hours, ot_15_hours, ot_20_hours, date');
@@ -75,7 +73,6 @@ const { data: projects } = await projectQuery;
 
       const [{ data: timesheets }, { data: assignments }] = await Promise.all([timesheetQuery, assignmentQuery]);
 
-      // Fetch worker monthly rates
       const { data: workers } = await supabase
         .from('workers')
         .select('employee_id, monthly_rate');
@@ -87,19 +84,16 @@ const { data: projects } = await projectQuery;
         workerRateMap[w.employee_id] = w.monthly_rate;
       });
 
-      // Mandays from assignments: full_day = 1, morning/afternoon = 0.5
       const mandayMap: Record<string, number> = {};
       (assignments || []).forEach(a => {
         mandayMap[a.project_id] = (mandayMap[a.project_id] || 0) + (a.shift === 'full_day' ? 1 : 0.5);
       });
 
-      // Calculate cost per project
       const costMap: Record<string, { total: number; workers: Set<string> }> = {};
 
       timesheets.forEach(t => {
         const monthlyRate = workerRateMap[t.worker_id] || 0;
 
-        // For all-time view, calculate working days for each entry's month
         const entryDate = new Date(t.date);
         const entryWorkingDays = view === 'alltime'
           ? getWorkingDays(entryDate.getFullYear(), entryDate.getMonth())
@@ -108,7 +102,6 @@ const { data: projects } = await projectQuery;
         const dailyRate = monthlyRate / entryWorkingDays;
         const hourlyRate = dailyRate / 8;
 
-        // Full-day rows (regular_hours > 4) always cost at the full daily rate
         const regularCost = t.regular_hours > 4 ? dailyRate : (t.regular_hours / 8) * dailyRate;
         const ot15Cost = t.ot_15_hours * hourlyRate * 1.5;
         const ot20Cost = t.ot_20_hours * hourlyRate * 2;
@@ -181,16 +174,16 @@ const { data: projects } = await projectQuery;
         )}
 
         <div className="flex border rounded overflow-hidden">
-  {(['all', 'active', 'completed', 'on-hold'] as const).map(s => (
-    <button
-      key={s}
-      onClick={() => setStatusFilter(s)}
-      className={`px-4 py-2 text-sm font-medium capitalize ${statusFilter === s ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
-    >
-      {s === 'all' ? 'All' : s}
-    </button>
-  ))}
-</div>
+          {(['all', 'active', 'completed', 'on-hold'] as const).map(s => (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              className={`px-4 py-2 text-sm font-medium capitalize ${statusFilter === s ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+            >
+              {s === 'all' ? 'All' : s}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Summary Card */}

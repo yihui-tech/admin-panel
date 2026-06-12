@@ -22,6 +22,7 @@ type HistoryEntry = {
   id: string;
   action: 'pickup' | 'dropoff' | 'roundtrip';
   removed_at: string | null;
+  location_override: boolean;
   sortDate: string;
   trips: {
     id: string;
@@ -71,7 +72,7 @@ export default function BinHistoryPage() {
         supabase.from('drivers').select('employee_id, name').order('name'),
         supabase
           .from('trip_bins')
-          .select('id, action, removed_at, trips!inner(id, vehicle_number, driver_id, trip_date, completed_at, customers(name), customer_locations(name, customers(name)), locations!dropoff_id(name))')
+          .select('id, action, removed_at, location_override, trips!inner(id, vehicle_number, driver_id, trip_date, completed_at, customers(name), customer_locations(name, customers(name)), locations!dropoff_id(name))')
           .eq('bin_id', binId)
           .eq('trips.status', 'completed'),
       ]);
@@ -223,6 +224,7 @@ export default function BinHistoryPage() {
                       <div className="flex items-center gap-1.5">
                         <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${tagColor}`}>{actionLabel}</span>
                         {isRemoved && <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-red-50 text-red-500 line-through">Removed</span>}
+                        {entry.location_override && !isRemoved && <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">Missing prior trip</span>}
                       </div>
                       <span className="text-xs text-gray-400">{formatDate(date)}</span>
                     </div>
