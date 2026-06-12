@@ -73,12 +73,15 @@ export default function VehicleCostsPage() {
   useEffect(() => {
     const loadPrice = async () => {
       setCostPerLitre('');
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('diesel_prices')
         .select('cost_per_litre')
         .eq('month', `${month}-01`)
         .maybeSingle();
-      if (data?.cost_per_litre) setCostPerLitre(String(data.cost_per_litre));
+      if (error) { console.error('diesel_prices load error:', error); return; }
+      if (data != null && data.cost_per_litre != null) {
+        setCostPerLitre(String(data.cost_per_litre));
+      }
     };
     loadPrice();
   }, [month]);
