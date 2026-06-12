@@ -54,26 +54,20 @@ type Driver = { employee_id: string; name: string };
 type CustomerOption = { customer_id: number; name: string; address: string | null };
 type CustomerLocationOption = { id: number; customer_id: number; name: string; address: string | null; contact_person: string | null; contact_number: string | null };
 type LocationOption = { id: number; name: string; address: string | null };
-type BinOption = { id: string; serial_number: string; customer_id: number | null; location_id: number | null; customer_location_id: number | null };
+type BinOption = { id: string; serial_number: string; customer_id: number | null; location_id: number | null; customer_location_id: number | null; customers: { name: string } | null; customer_locations: { name: string } | null; locations: { name: string } | null };
 type OutboundLocationOption = { id: number; name: string };
-type BinAction = { bin_id: string; action: 'dropoff' | 'pickup' | 'roundtrip'; location_override?: boolean };
+type PendingBin = { bin_id: string; serial_number: string; action: 'dropoff' | 'pickup' | 'roundtrip'; location_override?: boolean };
 
-const emptyForm = {
-  trip_type: 'collection',
-  trip_date: new Date().toISOString().slice(0, 10),
-  vehicle_number: '',
-  driver_id: '',
-  customer_id: '',
-  customer_location_id: '',
-  customer_vehicle_plate: '',
-  dropoff_id: '',
-  source_location_id: '',
-  outbound_location_id: '',
-  requester: '',
-  remarks: '',
+const inputCls = 'w-full border-2 border-gray-200 rounded-xl px-4 py-3 bg-white text-gray-900 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent';
+const dropdownCls = 'absolute z-20 top-full left-0 right-0 mt-1 border-2 border-gray-200 rounded-xl bg-white shadow-lg max-h-48 overflow-y-auto';
+const dropdownItemCls = 'w-full text-left px-4 py-2 text-sm hover:bg-gray-50 border-b last:border-b-0 text-gray-900';
+
+const binCurrentLocation = (bin: BinOption): { name: string } | null => {
+  if (bin.customer_location_id && bin.customer_locations) return bin.customer_locations;
+  if (bin.customer_id && bin.customers) return bin.customers;
+  if (bin.location_id && bin.locations) return bin.locations;
+  return null;
 };
-
-const emptyCustomerForm = { name: '', contact_person: '', contact_number: '', address: '' };
 
 const statusBadge = (status: string) => {
   const styles: Record<string, string> = {
@@ -202,16 +196,73 @@ function TripsPage() {
 
   const [showModal, setShowModal] = useState(false);
   const [editingTrip, setEditingTrip] = useState<Trip | null>(null);
-  const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(false);
-  const [binActions, setBinActions] = useState<BinAction[]>([]);
-
   const [previewTrip, setPreviewTrip] = useState<Trip | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const [showNewCustomer, setShowNewCustomer] = useState(false);
-  const [newCustomerForm, setNewCustomerForm] = useState(emptyCustomerForm);
+  // Modal trip fields
+  const [modalTripType, setModalTripType] = useState<'collection' | 'outbound' | 'customer_dropoff' | 'issue_bin'>('collection');
+  const [modalTripDate, setModalTripDate] = useState(new Date().toISOString().slice(0, 10));
+  const [modalRequester, setModalRequester] = useState('');
+  const [modalRemarks, setModalRemarks] = useState('');
+  const [modalCustVehiclePlate, setModalCustVehiclePlate] = useState('');
+
+  // Vehicle combobox
+  const [vehicleSearch, setVehicleSearch] = useState('');
+  const [vehicleValue, setVehicleValue] = useState('');
+  const [showVehicle, setShowVehicle] = useState(false);
+
+  // Driver combobox
+  const [driverSearch, setDriverSearch] = useState('');
+  const [driverValue, setDriverValue] = useState('');
+  const [showDriver, setShowDriver] = useState(false);
+
+  // Customer combobox
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [customerValue, setCustomerValue] = useState('');
+  const [showCustomer, setShowCustomer] = useState(false);
+  const [addingCustomer, setAddingCustomer] = useState(false);
+  const [newCustomerName, setNewCustomerName] = useState('');
   const [savingCustomer, setSavingCustomer] = useState(false);
+
+  // Site combobox
+  const [siteSearch, setSiteSearch] = useState('');
+  const [siteValue, setSiteValue] = useState('');
+  const [showSite, setShowSite] = useState(false);
+  const [addingSite, setAddingSite] = useState(false);
+  const [newSiteName, setNewSiteName] = useState('');
+  const [newSiteAddress, setNewSiteAddress] = useState('');
+  const [savingSite, setSavingSite] = useState(false);
+
+  // Dropoff location combobox
+  const [dropoffSearch, setDropoffSearch] = useState('');
+  const [dropoffValue, setDropoffValue] = useState('');
+  const [showDropoff, setShowDropoff] = useState(false);
+  const [addingDropoff, setAddingDropoff] = useState(false);
+  const [newDropoffName, setNewDropoffName] = useState('');
+  const [newDropoffAddress, setNewDropoffAddress] = useState('');
+  const [savingDropoff, setSavingDropoff] = useState(false);
+
+  // Source location combobox (outbound from-yard)
+  const [sourceSearch, setSourceSearch] = useState('');
+  const [sourceValue, setSourceValue] = useState('');
+  const [showSource, setShowSource] = useState(false);
+
+  // Outbound location combobox
+  const [outboundSearch, setOutboundSearch] = useState('');
+  const [outboundValue, setOutboundValue] = useState('');
+  const [showOutbound, setShowOutbound] = useState(false);
+  const [addingOutbound, setAddingOutbound] = useState(false);
+  const [newOutboundName, setNewOutboundName] = useState('');
+  const [newOutboundAddress, setNewOutboundAddress] = useState('');
+  const [savingOutbound, setSavingOutbound] = useState(false);
+
+  // Bins
+  const [pendingBins, setPendingBins] = useState<PendingBin[]>([]);
+  const [binSearch, setBinSearch] = useState('');
+  const [binValue, setBinValue] = useState('');
+  const [showBinDropdown, setShowBinDropdown] = useState(false);
+  const [binAction, setBinAction] = useState<'dropoff' | 'pickup' | 'roundtrip'>('dropoff');
 
   const [driverFilter, setDriverFilter] = useState('');
   const [dateFilter, setDateFilter] = useState('');
@@ -242,7 +293,7 @@ function TripsPage() {
       supabase.from('customer_locations').select('id, customer_id, name, address, contact_person, contact_number').order('name'),
       supabase.from('locations').select('id, name, address').order('name'),
       supabase.from('outbound_locations').select('id, name').order('name'),
-      supabase.from('bins').select('id, serial_number, customer_id, location_id, customer_location_id').order('serial_number'),
+      supabase.from('bins').select('id, serial_number, customer_id, location_id, customer_location_id, customers(name), customer_locations(name), locations(name)').order('serial_number'),
     ]);
     if (v.data) setVehicles(v.data);
     if (d.data) setDrivers(d.data);
@@ -261,10 +312,12 @@ function TripsPage() {
   useEffect(() => {
     if (prefillBinId && binOptions.length > 0 && !prefillDone.current) {
       prefillDone.current = true;
-      setForm(emptyForm);
+      const bin = binOptions.find(b => b.id === prefillBinId);
+      resetModalState();
       setEditingTrip(null);
-      setShowNewCustomer(false);
-      setBinActions([{ bin_id: prefillBinId, action: prefillAction ?? 'dropoff', location_override: true }]);
+      if (bin) {
+        setPendingBins([{ bin_id: prefillBinId, serial_number: bin.serial_number, action: prefillAction ?? 'dropoff', location_override: true }]);
+      }
       setShowModal(true);
     }
   }, [binOptions]);
@@ -306,117 +359,187 @@ function TripsPage() {
     );
   };
 
-  const sitesForCustomer = customerLocationOptions.filter(l => String(l.customer_id) === form.customer_id);
-  const selectedSite = customerLocationOptions.find(l => String(l.id) === form.customer_location_id) ?? null;
-  const selectedDropoffAddress = locationOptions.find(l => String(l.id) === form.dropoff_id)?.address ?? '';
+  const sitesForCustomer = customerLocationOptions.filter(l => l.customer_id === Number(customerValue));
+  const isDropoff = modalTripType === 'customer_dropoff';
+  const isIssueBin = modalTripType === 'issue_bin';
+
+  const selectedBin = binOptions.find(b => b.id === binValue);
+  const binAtCustomer = (bin: BinOption) => !!(bin.customer_id || bin.customer_location_id);
+  const binAtYard = (bin: BinOption) => !!bin.location_id;
+  const binConflictMsg = selectedBin ? (() => {
+    const bin = selectedBin;
+    const atCustomer = binAtCustomer(bin);
+    if (binAction === 'roundtrip' && atCustomer) return `Bin ${bin.serial_number} is at a customer site — use Collect instead.`;
+    if (atCustomer && binAction === 'dropoff') return `Bin ${bin.serial_number} is already at a customer site — use Collect instead.`;
+    if (bin.location_id && binAction === 'pickup') return `Bin ${bin.serial_number} is at the yard — use Issue instead.`;
+    return null;
+  })() : null;
+
+  const eligibleBins = binOptions.filter(b => {
+    if (pendingBins.some(pb => pb.bin_id === b.id)) return false;
+    if (!b.serial_number.toLowerCase().includes(binSearch.toLowerCase())) return false;
+    const atCustomer = binAtCustomer(b);
+    const atYard = binAtYard(b);
+    const unknown = !atCustomer && !atYard;
+    if (binAction === 'dropoff') return unknown || atYard;
+    if (binAction === 'pickup') {
+      if (!atCustomer && !unknown) return false;
+      if (siteValue) return unknown || b.customer_location_id === Number(siteValue);
+      if (customerValue) return unknown || b.customer_id === Number(customerValue);
+      return unknown || atCustomer;
+    }
+    return unknown || atYard; // roundtrip
+  });
+
+  const resetModalState = () => {
+    setModalTripType('collection'); setModalTripDate(new Date().toISOString().slice(0, 10));
+    setModalRequester(''); setModalRemarks(''); setModalCustVehiclePlate('');
+    setVehicleSearch(''); setVehicleValue('');
+    setDriverSearch(''); setDriverValue('');
+    setCustomerSearch(''); setCustomerValue(''); setAddingCustomer(false); setNewCustomerName('');
+    setSiteSearch(''); setSiteValue(''); setAddingSite(false); setNewSiteName(''); setNewSiteAddress('');
+    setDropoffSearch(''); setDropoffValue(''); setAddingDropoff(false); setNewDropoffName(''); setNewDropoffAddress('');
+    setSourceSearch(''); setSourceValue('');
+    setOutboundSearch(''); setOutboundValue(''); setAddingOutbound(false); setNewOutboundName(''); setNewOutboundAddress('');
+    setPendingBins([]); setBinSearch(''); setBinValue(''); setBinAction('dropoff');
+  };
 
   const openCreate = () => {
-    setForm(emptyForm);
+    resetModalState();
     setEditingTrip(null);
-    setShowNewCustomer(false);
-    setNewCustomerForm(emptyCustomerForm);
-    setBinActions([]);
     setShowModal(true);
   };
 
   const openEdit = (trip: Trip) => {
-    setForm({
-      trip_type: trip.trip_type ?? 'collection',
-      trip_date: trip.trip_date ?? new Date().toISOString().slice(0, 10),
-      vehicle_number: trip.vehicle_number ?? '',
-      driver_id: trip.driver_id ?? '',
-      customer_id: trip.customer_id != null ? String(trip.customer_id) : '',
-      customer_location_id: trip.customer_location_id != null ? String(trip.customer_location_id) : '',
-      customer_vehicle_plate: trip.customer_vehicle_plate ?? '',
-      dropoff_id: trip.dropoff_id != null ? String(trip.dropoff_id) : '',
-      source_location_id: trip.source_location_id != null ? String(trip.source_location_id) : '',
-      outbound_location_id: trip.outbound_location_id != null ? String(trip.outbound_location_id) : '',
-      requester: trip.requester ?? '',
-      remarks: trip.remarks ?? '',
-    });
-    setBinActions(trip.trip_bins.filter(tb => !tb.removed_at).map(tb => ({ bin_id: tb.bin_id, action: tb.action as 'dropoff' | 'pickup' | 'roundtrip' })));
+    resetModalState();
+    setModalTripType((trip.trip_type ?? 'collection') as 'collection' | 'outbound' | 'customer_dropoff' | 'issue_bin');
+    setModalTripDate(trip.trip_date ?? new Date().toISOString().slice(0, 10));
+    setModalRequester(trip.requester ?? '');
+    setModalRemarks(trip.remarks ?? '');
+    setModalCustVehiclePlate(trip.customer_vehicle_plate ?? '');
+    if (trip.vehicle_number) { setVehicleValue(trip.vehicle_number); setVehicleSearch(trip.vehicle_number); }
+    if (trip.driver_id) {
+      const d = drivers.find(dr => dr.employee_id === trip.driver_id);
+      setDriverValue(trip.driver_id); setDriverSearch(d ? `${d.name} (${d.employee_id})` : trip.driver_id);
+    }
+    if (trip.customer_id) {
+      const c = customerOptions.find(co => co.customer_id === Number(trip.customer_id));
+      setCustomerValue(String(trip.customer_id)); setCustomerSearch(c?.name ?? String(trip.customer_id));
+    }
+    if (trip.customer_location_id) {
+      const s = customerLocationOptions.find(l => l.id === trip.customer_location_id);
+      setSiteValue(String(trip.customer_location_id)); setSiteSearch(s?.name ?? String(trip.customer_location_id));
+    }
+    if (trip.dropoff_id) {
+      const l = locationOptions.find(lo => String(lo.id) === trip.dropoff_id);
+      setDropoffValue(trip.dropoff_id); setDropoffSearch(l?.name ?? trip.dropoff_id);
+    }
+    if (trip.source_location_id) {
+      const l = locationOptions.find(lo => String(lo.id) === trip.source_location_id);
+      setSourceValue(trip.source_location_id); setSourceSearch(l?.name ?? trip.source_location_id);
+    }
+    if (trip.outbound_location_id) {
+      const l = outboundLocationOptions.find(lo => lo.id === trip.outbound_location_id);
+      setOutboundValue(String(trip.outbound_location_id)); setOutboundSearch(l?.name ?? String(trip.outbound_location_id));
+    }
+    const bins = trip.trip_bins.filter(tb => !tb.removed_at).map(tb => ({
+      bin_id: tb.bin_id,
+      serial_number: tb.bins?.serial_number ?? tb.bin_id,
+      action: tb.action as 'dropoff' | 'pickup' | 'roundtrip',
+    }));
+    setPendingBins(bins);
     setEditingTrip(trip);
-    setShowNewCustomer(false);
-    setNewCustomerForm(emptyCustomerForm);
     setShowModal(true);
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    if (name === 'customer_id' && value === '__new__') {
-      setShowNewCustomer(true);
-      setForm(prev => ({ ...prev, customer_id: '', customer_location_id: '' }));
-    } else if (name === 'customer_id') {
-      setForm(prev => ({ ...prev, customer_id: value, customer_location_id: '' }));
-    } else {
-      setForm(prev => ({ ...prev, [name]: value }));
-    }
-  };
-
-  const handleSaveNewCustomer = async () => {
-    if (!newCustomerForm.name.trim()) return;
+  const handleCreateCustomer = async () => {
+    if (!newCustomerName.trim()) return;
     setSavingCustomer(true);
-    const { data, error } = await supabase
-      .from('customers')
-      .insert(newCustomerForm)
-      .select('customer_id, name, address')
-      .single();
+    const { data, error } = await supabase.from('customers').insert({ name: newCustomerName.trim() }).select('customer_id, name, address').single();
     setSavingCustomer(false);
     if (error) { alert('Error creating customer: ' + error.message); return; }
     if (data) {
       setCustomerOptions(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
-      setForm(prev => ({ ...prev, customer_id: String(data.customer_id) }));
-      setShowNewCustomer(false);
-      setNewCustomerForm(emptyCustomerForm);
+      setCustomerValue(String(data.customer_id)); setCustomerSearch(data.name);
+      setSiteValue(''); setSiteSearch('');
+      setAddingCustomer(false); setNewCustomerName('');
     }
   };
 
-  const binAtCustomer = (bin: BinOption) => !!(bin.customer_id || bin.customer_location_id);
-  const binAtYard = (bin: BinOption) => !!(bin.location_id);
-
-  const binActionConflict = (bin_id: string, action: 'dropoff' | 'pickup' | 'roundtrip'): string | null => {
-    const bin = binOptions.find(b => b.id === bin_id);
-    if (!bin) return null;
-    if (action === 'roundtrip') {
-      if (binAtCustomer(bin)) return `Bin ${bin.serial_number} is at a customer site — roundtrip requires bin to start at the yard.`;
-      return null;
+  const handleCreateSite = async () => {
+    if (!newSiteName.trim() || !customerValue) return;
+    setSavingSite(true);
+    const { data, error } = await supabase.from('customer_locations').insert({ customer_id: Number(customerValue), name: newSiteName.trim(), address: newSiteAddress.trim() || null }).select('id, customer_id, name, address, contact_person, contact_number').single();
+    setSavingSite(false);
+    if (error) { alert('Error creating site: ' + error.message); return; }
+    if (data) {
+      setCustomerLocationOptions(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
+      setSiteValue(String(data.id)); setSiteSearch(data.name);
+      setAddingSite(false); setNewSiteName(''); setNewSiteAddress('');
     }
-    if (binAtCustomer(bin) && action === 'dropoff')
-      return `Bin ${bin.serial_number} is already at a customer site — cannot drop off again. Change action to Pick up.`;
-    if (binAtYard(bin) && action === 'pickup')
-      return `Bin ${bin.serial_number} is at the yard — cannot pick up from customer. Change action to Drop off.`;
-    return null;
+  };
+
+  const handleCreateDropoff = async () => {
+    if (!newDropoffName.trim()) return;
+    setSavingDropoff(true);
+    const { data, error } = await supabase.from('locations').insert({ name: newDropoffName.trim(), address: newDropoffAddress.trim() || null }).select('id, name, address').single();
+    setSavingDropoff(false);
+    if (error) { alert('Error creating location: ' + error.message); return; }
+    if (data) {
+      setLocationOptions(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
+      setDropoffValue(String(data.id)); setDropoffSearch(data.name);
+      setAddingDropoff(false); setNewDropoffName(''); setNewDropoffAddress('');
+    }
+  };
+
+  const handleCreateOutbound = async () => {
+    if (!newOutboundName.trim()) return;
+    setSavingOutbound(true);
+    const { data, error } = await supabase.from('outbound_locations').insert({ name: newOutboundName.trim(), address: newOutboundAddress.trim() || null }).select('id, name').single();
+    setSavingOutbound(false);
+    if (error) { alert('Error creating destination: ' + error.message); return; }
+    if (data) {
+      setOutboundLocationOptions(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
+      setOutboundValue(String(data.id)); setOutboundSearch(data.name);
+      setAddingOutbound(false); setNewOutboundName(''); setNewOutboundAddress('');
+    }
+  };
+
+  const handleAddPendingBin = () => {
+    if (!binValue || !selectedBin) return;
+    if (binConflictMsg) { alert(binConflictMsg); return; }
+    if (pendingBins.some(b => b.bin_id === binValue)) return;
+    setPendingBins(prev => [...prev, { bin_id: binValue, serial_number: selectedBin.serial_number, action: binAction }]);
+    setBinValue(''); setBinSearch('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const conflictErrors = binActions
-      .filter(ba => ba.bin_id && !ba.location_override)
-      .map(ba => binActionConflict(ba.bin_id, ba.action))
-      .filter(Boolean);
-    if (conflictErrors.length > 0) {
-      alert(conflictErrors.join('\n'));
-      return;
+    if (modalTripType === 'collection' && !vehicleValue) { alert('Vehicle is required.'); return; }
+    if (modalTripType === 'outbound') {
+      if (!vehicleValue) { alert('Vehicle is required.'); return; }
+      if (!sourceValue) { alert('From Yard is required.'); return; }
+      if (!outboundValue) { alert('To (Destination) is required.'); return; }
     }
+    if (modalTripType === 'issue_bin' && !vehicleValue) { alert('Vehicle is required.'); return; }
+    if (isDropoff && !modalCustVehiclePlate.trim()) { alert('Customer vehicle plate is required.'); return; }
 
     setLoading(true);
 
-    const isOutbound = form.trip_type === 'outbound';
-    const isCustomerDropoff = form.trip_type === 'customer_dropoff';
     const payload = {
-      trip_type: form.trip_type,
-      trip_date: form.trip_date || null,
-      vehicle_number: isCustomerDropoff ? null : form.vehicle_number,
-      driver_id: isCustomerDropoff ? null : (form.driver_id || null),
-      customer_id: form.customer_id ? parseInt(form.customer_id, 10) : null,
-      customer_location_id: form.customer_location_id ? parseInt(form.customer_location_id, 10) : null,
-      customer_vehicle_plate: isCustomerDropoff ? (form.customer_vehicle_plate || null) : null,
-      dropoff_id: !isOutbound ? (form.dropoff_id ? parseInt(form.dropoff_id, 10) : null) : null,
-      source_location_id: isOutbound ? (form.source_location_id ? parseInt(form.source_location_id, 10) : null) : null,
-      outbound_location_id: isOutbound ? (form.outbound_location_id ? parseInt(form.outbound_location_id, 10) : null) : null,
-      requester: form.requester || null,
-      remarks: form.remarks || null,
+      trip_type: modalTripType,
+      trip_date: modalTripDate || null,
+      vehicle_number: isDropoff ? null : (vehicleValue || null),
+      driver_id: isDropoff ? null : (driverValue || null),
+      customer_id: customerValue ? parseInt(customerValue, 10) : null,
+      customer_location_id: (modalTripType === 'collection' || isIssueBin) && siteValue ? parseInt(siteValue, 10) : null,
+      customer_vehicle_plate: isDropoff ? (modalCustVehiclePlate || null) : null,
+      dropoff_id: (modalTripType === 'collection' || isDropoff) && dropoffValue ? parseInt(dropoffValue, 10) : null,
+      source_location_id: modalTripType === 'outbound' && sourceValue ? parseInt(sourceValue, 10) : null,
+      outbound_location_id: modalTripType === 'outbound' && outboundValue ? parseInt(outboundValue, 10) : null,
+      requester: modalRequester || null,
+      remarks: modalRemarks || null,
     };
 
     let tripId = '';
@@ -441,10 +564,9 @@ function TripsPage() {
     if (editingTrip) {
       await supabase.from('trip_bins').delete().eq('trip_id', tripId);
     }
-    const validBinActions = binActions.filter(ba => ba.bin_id);
-    if (validBinActions.length > 0) {
+    if (pendingBins.length > 0) {
       await supabase.from('trip_bins').insert(
-        validBinActions.map(ba => ({ trip_id: tripId, bin_id: ba.bin_id, action: ba.action, location_override: ba.location_override ?? false }))
+        pendingBins.map(b => ({ trip_id: tripId, bin_id: b.bin_id, action: b.action, location_override: b.location_override ?? false }))
       );
     }
 
@@ -631,214 +753,278 @@ function TripsPage() {
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <h2 className="text-lg font-semibold mb-4">{editingTrip ? 'Edit Trip' : 'New Trip'}</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold">{editingTrip ? 'Edit Trip' : 'New Trip'}</h2>
+              <button type="button" onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-700 text-2xl leading-none px-1">×</button>
+            </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
 
-              {/* Trip type selector */}
+              {/* Trip type */}
               <div className="flex gap-2 flex-wrap">
-                {([
-                  ['collection', 'Collection', 'bg-blue-600'],
-                  ['outbound', 'Outbound', 'bg-orange-500'],
-                  ['customer_dropoff', 'Customer Drop-off', 'bg-purple-600'],
-                  ['issue_bin', 'Issue Bin', 'bg-green-600'],
-                ] as const).map(([value, label, activeColor]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setForm(prev => ({ ...emptyForm, trip_type: value, trip_date: prev.trip_date }))}
-                    className={`px-3 py-1.5 rounded text-sm font-medium ${form.trip_type === value ? `${activeColor} text-white` : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                  >
-                    {label}
-                  </button>
+                {([['collection','Collection','bg-blue-600'],['outbound','Outbound','bg-orange-500'],['customer_dropoff','Customer Drop-off','bg-purple-600'],['issue_bin','Issue Bin','bg-green-600']] as const).map(([v,l,c]) => (
+                  <button key={v} type="button"
+                    onClick={() => { resetModalState(); setModalTripType(v); setModalTripDate(modalTripDate); }}
+                    className={`px-4 py-2 rounded-xl font-semibold text-sm border-2 transition-colors ${modalTripType === v ? `${c} text-white border-transparent` : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'}`}
+                  >{l}</button>
                 ))}
               </div>
 
               {/* Trip date */}
               <div>
-                <label className="block text-sm font-medium mb-1">Trip Date</label>
-                <input type="date" name="trip_date" value={form.trip_date} onChange={handleChange} required className="w-full border rounded px-3 py-2" />
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Trip Date</label>
+                <input type="date" value={modalTripDate} onChange={e => setModalTripDate(e.target.value)} required className={inputCls} />
               </div>
 
-              {/* Vehicle + Driver (all except customer_dropoff) */}
-              {form.trip_type !== 'customer_dropoff' && (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Vehicle</label>
-                    <select name="vehicle_number" value={form.vehicle_number} onChange={handleChange} required className="w-full border rounded px-3 py-2">
-                      <option value="">Select vehicle</option>
-                      {vehicles.map(v => <option key={v.plate_number} value={v.plate_number}>{v.plate_number}</option>)}
-                    </select>
+              {/* Vehicle (not customer_dropoff) */}
+              {!isDropoff && (
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Vehicle</label>
+                  <div className="relative">
+                    <input value={vehicleSearch} onChange={e => { setVehicleSearch(e.target.value); setVehicleValue(''); setShowVehicle(true); }} onFocus={() => setShowVehicle(true)} onBlur={() => setTimeout(() => setShowVehicle(false), 150)} placeholder="Search plate…" className={inputCls} />
+                    {showVehicle && (
+                      <div className={dropdownCls}>
+                        {vehicles.filter(v => v.plate_number.toLowerCase().includes(vehicleSearch.toLowerCase())).map(v => (
+                          <button key={v.plate_number} type="button" onMouseDown={() => { setVehicleValue(v.plate_number); setVehicleSearch(v.plate_number); setShowVehicle(false); }} className={dropdownItemCls}>{v.plate_number}</button>
+                        ))}
+                        {!vehicles.filter(v => v.plate_number.toLowerCase().includes(vehicleSearch.toLowerCase())).length && <p className="px-4 py-2 text-sm text-gray-400">No vehicles found</p>}
+                      </div>
+                    )}
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Driver</label>
-                    <select name="driver_id" value={form.driver_id} onChange={handleChange} className="w-full border rounded px-3 py-2">
-                      <option value="">— No driver —</option>
-                      {drivers.map(d => <option key={d.employee_id} value={d.employee_id}>{d.name} ({d.employee_id})</option>)}
-                    </select>
-                  </div>
-                </>
+                </div>
               )}
 
-              {/* Customer Drop-off: vehicle plate */}
-              {form.trip_type === 'customer_dropoff' && (
+              {/* Driver (not customer_dropoff) */}
+              {!isDropoff && (
                 <div>
-                  <label className="block text-sm font-medium mb-1">Customer Vehicle Plate</label>
-                  <input name="customer_vehicle_plate" value={form.customer_vehicle_plate} onChange={handleChange} required placeholder="e.g. SBX1234A" className="w-full border rounded px-3 py-2" />
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Driver</label>
+                  <div className="relative">
+                    <input value={driverSearch} onChange={e => { setDriverSearch(e.target.value); setDriverValue(''); setShowDriver(true); }} onFocus={() => setShowDriver(true)} onBlur={() => setTimeout(() => setShowDriver(false), 150)} placeholder="Search driver…" className={inputCls} />
+                    {showDriver && (
+                      <div className={dropdownCls}>
+                        {drivers.filter(d => `${d.name} ${d.employee_id}`.toLowerCase().includes(driverSearch.toLowerCase())).map(d => (
+                          <button key={d.employee_id} type="button" onMouseDown={() => { setDriverValue(d.employee_id); setDriverSearch(`${d.name} (${d.employee_id})`); setShowDriver(false); }} className={dropdownItemCls}>{d.name} <span className="text-gray-400">({d.employee_id})</span></button>
+                        ))}
+                        {!drivers.filter(d => `${d.name} ${d.employee_id}`.toLowerCase().includes(driverSearch.toLowerCase())).length && <p className="px-4 py-2 text-sm text-gray-400">No drivers found</p>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Customer vehicle plate (customer_dropoff) */}
+              {isDropoff && (
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Customer Vehicle Plate <span className="text-red-500">*</span></label>
+                  <input value={modalCustVehiclePlate} onChange={e => setModalCustVehiclePlate(e.target.value.toUpperCase())} placeholder="e.g. SBX1234A" className={inputCls} />
                 </div>
               )}
 
               {/* Outbound: From Yard + To Destination */}
-              {form.trip_type === 'outbound' && (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">From Yard</label>
-                    <select name="source_location_id" value={form.source_location_id} onChange={handleChange} required className="w-full border rounded px-3 py-2">
-                      <option value="">Select yard</option>
-                      {locationOptions.map(l => <option key={l.id} value={String(l.id)}>{l.name}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">To Destination</label>
-                    <select name="outbound_location_id" value={form.outbound_location_id} onChange={handleChange} required className="w-full border rounded px-3 py-2">
-                      <option value="">Select destination</option>
-                      {outboundLocationOptions.map(l => <option key={l.id} value={String(l.id)}>{l.name}</option>)}
-                    </select>
-                  </div>
-                </>
-              )}
-
-              {/* Collection / Customer Drop-off / Issue Bin: Customer + Site */}
-              {form.trip_type !== 'outbound' && (
+              {modalTripType === 'outbound' && (<>
                 <div>
-                  <label className="block text-sm font-medium mb-1">Customer</label>
-                  <select
-                    name="customer_id"
-                    value={showNewCustomer ? '__new__' : form.customer_id}
-                    onChange={handleChange}
-                    className="w-full border rounded px-3 py-2"
-                  >
-                    <option value="">— No customer —</option>
-                    {customerOptions.map(c => <option key={c.customer_id} value={String(c.customer_id)}>{c.name}</option>)}
-                    <option value="__new__">+ Create new customer…</option>
-                  </select>
-
-                  {!showNewCustomer && form.customer_id && sitesForCustomer.length > 0 && (
-                    <div className="mt-2">
-                      <select name="customer_location_id" value={form.customer_location_id} onChange={handleChange} className="w-full border rounded px-3 py-2">
-                        <option value="">— Select site —</option>
-                        {sitesForCustomer.map(s => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
-                      </select>
-                      {selectedSite && (
-                        <div className="mt-2 px-3 py-2 bg-gray-50 border rounded text-sm text-gray-600 space-y-0.5">
-                          {selectedSite.address && <div><span className="text-xs font-medium text-gray-400 uppercase tracking-wide mr-2">Address</span>{selectedSite.address}</div>}
-                          {selectedSite.contact_person && <div><span className="text-xs font-medium text-gray-400 uppercase tracking-wide mr-2">Contact</span>{selectedSite.contact_person}{selectedSite.contact_number ? ` · ${selectedSite.contact_number}` : ''}</div>}
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">From Yard <span className="text-red-500">*</span></label>
+                  <div className="relative">
+                    <input value={sourceSearch} onChange={e => { setSourceSearch(e.target.value); setSourceValue(''); setShowSource(true); }} onFocus={() => setShowSource(true)} onBlur={() => setTimeout(() => setShowSource(false), 150)} placeholder="Search yard…" className={inputCls} />
+                    {showSource && (
+                      <div className={dropdownCls}>
+                        {locationOptions.filter(l => l.name.toLowerCase().includes(sourceSearch.toLowerCase())).map(l => (
+                          <button key={l.id} type="button" onMouseDown={() => { setSourceValue(String(l.id)); setSourceSearch(l.name); setShowSource(false); }} className={dropdownItemCls}>{l.name}</button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-sm font-semibold text-gray-700">To Destination <span className="text-red-500">*</span></label>
+                    <button type="button" onClick={() => { setAddingOutbound(true); setShowOutbound(false); }} className="text-xs text-blue-600 hover:underline">+ Add new</button>
+                  </div>
+                  {addingOutbound ? (
+                    <div className="border-2 border-blue-200 rounded-xl p-3 bg-blue-50 space-y-2">
+                      <input value={newOutboundName} onChange={e => setNewOutboundName(e.target.value)} placeholder="Destination name" className={inputCls} autoFocus />
+                      <input value={newOutboundAddress} onChange={e => setNewOutboundAddress(e.target.value)} placeholder="Address (optional)" className={inputCls} />
+                      <div className="flex gap-2">
+                        <button type="button" onClick={handleCreateOutbound} disabled={!newOutboundName.trim() || savingOutbound} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50">{savingOutbound ? 'Saving...' : 'Save'}</button>
+                        <button type="button" onClick={() => { setAddingOutbound(false); setNewOutboundName(''); setNewOutboundAddress(''); }} className="px-4 py-2 text-sm font-semibold text-gray-600 border-2 border-gray-200 rounded-lg">Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <input value={outboundSearch} onChange={e => { setOutboundSearch(e.target.value); setOutboundValue(''); setShowOutbound(true); }} onFocus={() => setShowOutbound(true)} onBlur={() => setTimeout(() => setShowOutbound(false), 150)} placeholder="Search destination…" className={inputCls} />
+                      {showOutbound && (
+                        <div className={dropdownCls}>
+                          {outboundLocationOptions.filter(l => l.name.toLowerCase().includes(outboundSearch.toLowerCase())).map(l => (
+                            <button key={l.id} type="button" onMouseDown={() => { setOutboundValue(String(l.id)); setOutboundSearch(l.name); setShowOutbound(false); }} className={dropdownItemCls}>{l.name}</button>
+                          ))}
                         </div>
                       )}
                     </div>
                   )}
+                </div>
+              </>)}
 
-                  {showNewCustomer && (
-                    <div className="mt-3 p-4 border border-blue-200 rounded-lg bg-blue-50 space-y-3">
-                      <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">New Customer</p>
-                      <div><label className="block text-sm font-medium mb-1">Company Name</label><input value={newCustomerForm.name} onChange={e => setNewCustomerForm(prev => ({ ...prev, name: e.target.value }))} className="w-full border rounded px-3 py-2 bg-white" /></div>
-                      <div><label className="block text-sm font-medium mb-1">Address</label><input value={newCustomerForm.address} onChange={e => setNewCustomerForm(prev => ({ ...prev, address: e.target.value }))} className="w-full border rounded px-3 py-2 bg-white" /></div>
-                      <div><label className="block text-sm font-medium mb-1">Contact Person</label><input value={newCustomerForm.contact_person} onChange={e => setNewCustomerForm(prev => ({ ...prev, contact_person: e.target.value }))} className="w-full border rounded px-3 py-2 bg-white" /></div>
-                      <div><label className="block text-sm font-medium mb-1">Contact Number</label><input value={newCustomerForm.contact_number} onChange={e => setNewCustomerForm(prev => ({ ...prev, contact_number: e.target.value }))} className="w-full border rounded px-3 py-2 bg-white" /></div>
+              {/* Customer + Site (all except outbound) */}
+              {modalTripType !== 'outbound' && (
+                <div className="space-y-2">
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-sm font-semibold text-gray-700">Customer</label>
+                      <button type="button" onClick={() => { setAddingCustomer(true); setShowCustomer(false); }} className="text-xs text-blue-600 hover:underline">+ Add new</button>
+                    </div>
+                    {addingCustomer ? (
+                      <div className="border-2 border-blue-200 rounded-xl p-3 bg-blue-50 space-y-2">
+                        <input value={newCustomerName} onChange={e => setNewCustomerName(e.target.value)} placeholder="Company name" className={inputCls} autoFocus onKeyDown={e => { if (e.key === 'Enter') handleCreateCustomer(); if (e.key === 'Escape') { setAddingCustomer(false); setNewCustomerName(''); }}} />
+                        <div className="flex gap-2">
+                          <button type="button" onClick={handleCreateCustomer} disabled={!newCustomerName.trim() || savingCustomer} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50">{savingCustomer ? 'Saving...' : 'Save'}</button>
+                          <button type="button" onClick={() => { setAddingCustomer(false); setNewCustomerName(''); }} className="px-4 py-2 text-sm font-semibold text-gray-600 border-2 border-gray-200 rounded-lg">Cancel</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <input value={customerSearch} onChange={e => { setCustomerSearch(e.target.value); setCustomerValue(''); setSiteValue(''); setSiteSearch(''); setShowCustomer(true); }} onFocus={() => setShowCustomer(true)} onBlur={() => setTimeout(() => setShowCustomer(false), 150)} placeholder="Search customer…" className={inputCls} />
+                        {showCustomer && (
+                          <div className={dropdownCls}>
+                            {customerOptions.filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase())).map(c => (
+                              <button key={c.customer_id} type="button" onMouseDown={() => { setCustomerValue(String(c.customer_id)); setCustomerSearch(c.name); setSiteValue(''); setSiteSearch(''); setShowCustomer(false); }} className={dropdownItemCls}>{c.name}</button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {customerValue && !addingCustomer && (
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-sm font-semibold text-gray-700">Site</label>
+                        <button type="button" onClick={() => { setAddingSite(true); setShowSite(false); }} className="text-xs text-blue-600 hover:underline">+ Add new</button>
+                      </div>
+                      {addingSite ? (
+                        <div className="border-2 border-blue-200 rounded-xl p-3 bg-blue-50 space-y-2">
+                          <input value={newSiteName} onChange={e => setNewSiteName(e.target.value)} placeholder="Site name" className={inputCls} autoFocus />
+                          <input value={newSiteAddress} onChange={e => setNewSiteAddress(e.target.value)} placeholder="Address" className={inputCls} />
+                          <div className="flex gap-2">
+                            <button type="button" onClick={handleCreateSite} disabled={!newSiteName.trim() || savingSite} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50">{savingSite ? 'Saving...' : 'Save'}</button>
+                            <button type="button" onClick={() => { setAddingSite(false); setNewSiteName(''); setNewSiteAddress(''); }} className="px-4 py-2 text-sm font-semibold text-gray-600 border-2 border-gray-200 rounded-lg">Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="relative">
+                          <input value={siteSearch} onChange={e => { setSiteSearch(e.target.value); setSiteValue(''); setShowSite(true); }} onFocus={() => setShowSite(true)} onBlur={() => setTimeout(() => setShowSite(false), 150)} placeholder="Search site…" className={inputCls} />
+                          {showSite && (
+                            <div className={dropdownCls}>
+                              {sitesForCustomer.filter(s => s.name.toLowerCase().includes(siteSearch.toLowerCase())).map(s => (
+                                <button key={s.id} type="button" onMouseDown={() => { setSiteValue(String(s.id)); setSiteSearch(s.name); setShowSite(false); }} className={dropdownItemCls}>{s.name}{s.address && <div className="text-xs text-gray-400">{s.address}</div>}</button>
+                              ))}
+                              {!sitesForCustomer.filter(s => s.name.toLowerCase().includes(siteSearch.toLowerCase())).length && <p className="px-4 py-2 text-sm text-gray-400">No sites — add one above</p>}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Delivery location (collection + customer_dropoff) */}
+              {(modalTripType === 'collection' || isDropoff) && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-sm font-semibold text-gray-700">Delivery Location {modalTripType === 'collection' && <span className="text-red-500">*</span>}</label>
+                    <button type="button" onClick={() => { setAddingDropoff(true); setShowDropoff(false); }} className="text-xs text-blue-600 hover:underline">+ Add new</button>
+                  </div>
+                  {addingDropoff ? (
+                    <div className="border-2 border-blue-200 rounded-xl p-3 bg-blue-50 space-y-2">
+                      <input value={newDropoffName} onChange={e => setNewDropoffName(e.target.value)} placeholder="Location name" className={inputCls} autoFocus />
+                      <input value={newDropoffAddress} onChange={e => setNewDropoffAddress(e.target.value)} placeholder="Address (optional)" className={inputCls} />
                       <div className="flex gap-2">
-                        <button type="button" onClick={handleSaveNewCustomer} disabled={savingCustomer || !newCustomerForm.name.trim()} className="bg-blue-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-blue-700 disabled:opacity-50">{savingCustomer ? 'Saving...' : 'Save Customer'}</button>
-                        <button type="button" onClick={() => { setShowNewCustomer(false); setNewCustomerForm(emptyCustomerForm); }} className="border px-4 py-1.5 rounded text-sm font-medium hover:bg-gray-50">Cancel</button>
+                        <button type="button" onClick={handleCreateDropoff} disabled={!newDropoffName.trim() || savingDropoff} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50">{savingDropoff ? 'Saving...' : 'Save'}</button>
+                        <button type="button" onClick={() => { setAddingDropoff(false); setNewDropoffName(''); setNewDropoffAddress(''); }} className="px-4 py-2 text-sm font-semibold text-gray-600 border-2 border-gray-200 rounded-lg">Cancel</button>
                       </div>
                     </div>
-                  )}
-                </div>
-              )}
-
-              {/* Delivery location (collection + customer_dropoff only) */}
-              {(form.trip_type === 'collection' || form.trip_type === 'customer_dropoff') && (
-                <div>
-                  <label className="block text-sm font-medium mb-1">Delivery Location</label>
-                  <select name="dropoff_id" value={form.dropoff_id} onChange={handleChange} className="w-full border rounded px-3 py-2">
-                    <option value="">— Select location —</option>
-                    {locationOptions.map(l => <option key={l.id} value={String(l.id)}>{l.name}</option>)}
-                  </select>
-                  {selectedDropoffAddress && (
-                    <div className="mt-2 px-3 py-2 bg-gray-50 border rounded text-sm text-gray-600">
-                      <span className="text-xs font-medium text-gray-400 uppercase tracking-wide mr-2">Address</span>{selectedDropoffAddress}
+                  ) : (
+                    <div className="relative">
+                      <input value={dropoffSearch} onChange={e => { setDropoffSearch(e.target.value); setDropoffValue(''); setShowDropoff(true); }} onFocus={() => setShowDropoff(true)} onBlur={() => setTimeout(() => setShowDropoff(false), 150)} placeholder="Search location…" className={inputCls} />
+                      {showDropoff && (
+                        <div className={dropdownCls}>
+                          {locationOptions.filter(l => l.name.toLowerCase().includes(dropoffSearch.toLowerCase())).map(l => (
+                            <button key={l.id} type="button" onMouseDown={() => { setDropoffValue(String(l.id)); setDropoffSearch(l.name); setShowDropoff(false); }} className={dropdownItemCls}>{l.name}{l.address && <div className="text-xs text-gray-400">{l.address}</div>}</button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
               )}
 
               <div>
-                <label className="block text-sm font-medium mb-1">Requester</label>
-                <input name="requester" value={form.requester} onChange={handleChange} className="w-full border rounded px-3 py-2" />
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Requester</label>
+                <input value={modalRequester} onChange={e => setModalRequester(e.target.value)} placeholder="Who placed this order" className={inputCls} />
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-1">Remarks</label>
-                <textarea name="remarks" value={form.remarks} onChange={handleChange} rows={2} className="w-full border rounded px-3 py-2 resize-none" />
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Remarks</label>
+                <textarea value={modalRemarks} onChange={e => setModalRemarks(e.target.value)} rows={2} className={inputCls + ' resize-none'} />
               </div>
 
-              {/* Bin movements (not for customer_dropoff) */}
-              {form.trip_type !== 'customer_dropoff' && (
+              {/* Bins (not for customer_dropoff) */}
+              {!isDropoff && (
                 <div>
-                  <label className="block text-sm font-medium mb-2">Bin Movements</label>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-2">Bins <span className="text-gray-400 font-normal">(optional)</span></h3>
                   <div className="space-y-2">
-                    {binActions.map((ba, i) => {
-                      const selectedBin = binOptions.find(b => b.id === ba.bin_id);
-                      const conflict = ba.bin_id && !ba.location_override ? binActionConflict(ba.bin_id, ba.action) : null;
-                      const isIssueBin = form.trip_type === 'issue_bin';
-                      return (
-                        <div key={i} className="space-y-1">
-                          <div className="flex gap-2 items-center">
-                            <select
-                              value={ba.bin_id}
-                              onChange={e => {
-                                const bin = binOptions.find(b => b.id === e.target.value);
-                                const action = isIssueBin ? 'dropoff' : bin?.location_id ? 'dropoff' : (bin?.customer_id || bin?.customer_location_id) ? 'pickup' : ba.action;
-                                setBinActions(prev => prev.map((a, j) => j === i ? { ...a, bin_id: e.target.value, action, location_override: false } : a));
-                              }}
-                              className="flex-1 border rounded px-3 py-2 text-sm"
-                            >
-                              <option value="">Select bin</option>
-                              {binOptions.map(b => <option key={b.id} value={b.id}>{b.serial_number}</option>)}
-                            </select>
-                            {isIssueBin ? (
-                              <span className="border rounded px-3 py-2 text-sm bg-gray-50 text-gray-600 whitespace-nowrap">Issue Bin</span>
-                            ) : (
-                              <select
-                                value={ba.action}
-                                onChange={e => setBinActions(prev => prev.map((a, j) => j === i ? { ...a, action: e.target.value as 'dropoff' | 'pickup' | 'roundtrip', location_override: false } : a))}
-                                className={`border rounded px-3 py-2 text-sm ${conflict ? 'border-red-400 bg-red-50' : ''}`}
-                              >
-                                <option value="dropoff" disabled={!!(selectedBin && binAtCustomer(selectedBin) && !ba.location_override)}>Issue Bin</option>
-                                <option value="pickup" disabled={!!(selectedBin && binAtYard(selectedBin) && !ba.location_override)}>Collect Bin</option>
-                                <option value="roundtrip" disabled={!!(selectedBin && binAtCustomer(selectedBin) && !ba.location_override)}>Roundtrip</option>
-                              </select>
-                            )}
-                            <button type="button" onClick={() => setBinActions(prev => prev.filter((_, j) => j !== i))} className="text-red-500 hover:text-red-700 px-1 text-lg leading-none">×</button>
-                          </div>
-                          {conflict && <p className="text-xs text-red-600 pl-1">{conflict}</p>}
+                    {pendingBins.map(pb => (
+                      <div key={pb.bin_id} className="flex items-center gap-3 border-2 border-gray-100 rounded-xl px-3 py-2.5 bg-white">
+                        <span className={`font-bold text-lg w-6 shrink-0 ${pb.action === 'dropoff' ? 'text-blue-600' : pb.action === 'pickup' ? 'text-orange-500' : 'text-purple-600'}`}>
+                          {pb.action === 'dropoff' ? '↓' : pb.action === 'pickup' ? '↑' : '↕'}
+                        </span>
+                        <div className="flex-1 text-sm">
+                          <span className="font-semibold">{pb.serial_number}</span>
+                          <span className="ml-2 text-gray-500">{pb.action === 'dropoff' ? 'Issue Bin' : pb.action === 'pickup' ? 'Collect Bin' : 'Roundtrip'}</span>
+                          {pb.location_override && <span className="ml-2 text-xs text-amber-600">(override)</span>}
                         </div>
-                      );
-                    })}
-                    <button
-                      type="button"
-                      onClick={() => setBinActions(prev => [...prev, { bin_id: '', action: form.trip_type === 'issue_bin' ? 'dropoff' : 'dropoff' }])}
-                      className="text-sm text-blue-600 hover:underline"
-                    >
-                      + Add bin
-                    </button>
+                        <button type="button" onClick={() => setPendingBins(prev => prev.filter(b => b.bin_id !== pb.bin_id))} className="text-gray-400 hover:text-red-500 text-xl px-1">×</button>
+                      </div>
+                    ))}
+                    <div className="flex gap-2 items-center">
+                      {!isIssueBin && (
+                        <select value={binAction} onChange={e => { setBinAction(e.target.value as 'dropoff' | 'pickup' | 'roundtrip'); setBinValue(''); setBinSearch(''); }} className="border-2 border-gray-200 rounded-xl px-3 py-3 text-sm bg-white shrink-0">
+                          <option value="dropoff">Issue Bin</option>
+                          <option value="pickup">Collect Bin</option>
+                          <option value="roundtrip">Roundtrip</option>
+                        </select>
+                      )}
+                      <div className="relative flex-1">
+                        <input value={binSearch} onChange={e => { setBinSearch(e.target.value); setBinValue(''); setShowBinDropdown(true); }} onFocus={() => setShowBinDropdown(true)} onBlur={() => setTimeout(() => setShowBinDropdown(false), 150)} placeholder="Search bin…" className={inputCls} />
+                        {showBinDropdown && (
+                          <div className={dropdownCls}>
+                            {eligibleBins.length === 0
+                              ? <p className="px-4 py-2 text-sm text-gray-400">{binAction === 'pickup' && (siteValue || customerValue) ? 'No bins at this location' : 'No bins found'}</p>
+                              : eligibleBins.map(b => {
+                                  const loc = binCurrentLocation(b);
+                                  return (
+                                    <button key={b.id} type="button" onMouseDown={() => { setBinValue(b.id); setBinSearch(b.serial_number); setShowBinDropdown(false); }} className={dropdownItemCls}>
+                                      <span>{b.serial_number}</span>
+                                      {loc && <div className="text-xs text-gray-400">{loc.name}</div>}
+                                    </button>
+                                  );
+                                })
+                            }
+                          </div>
+                        )}
+                      </div>
+                      <button type="button" onClick={handleAddPendingBin} disabled={!binValue || !!binConflictMsg} className="bg-blue-600 text-white px-4 py-3 rounded-xl text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 shrink-0">Add</button>
+                    </div>
+                    {selectedBin && binConflictMsg && <p className="text-sm text-red-600 font-medium">{binConflictMsg}</p>}
                   </div>
                 </div>
               )}
 
               <div className="flex gap-3 pt-2">
-                <button type="submit" disabled={loading || showNewCustomer} className="bg-blue-600 text-white px-6 py-2 rounded font-medium hover:bg-blue-700 disabled:opacity-50">
+                <button type="submit" disabled={loading} className="bg-blue-600 text-white px-6 py-2.5 rounded-xl font-semibold hover:bg-blue-700 disabled:opacity-50">
                   {loading ? 'Saving...' : editingTrip ? 'Save Changes' : 'Create Trip'}
                 </button>
-                <button type="button" onClick={() => setShowModal(false)} className="border px-6 py-2 rounded font-medium hover:bg-gray-50">
+                <button type="button" onClick={() => setShowModal(false)} className="border-2 border-gray-200 px-6 py-2.5 rounded-xl font-semibold text-gray-600 hover:bg-gray-50">
                   Cancel
                 </button>
               </div>
