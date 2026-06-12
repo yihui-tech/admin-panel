@@ -39,6 +39,7 @@ type OverrideEntry = {
   id: string;
   from_label: string | null;
   to_label: string | null;
+  missing_action: string | null;
   note: string | null;
   created_at: string;
   sortDate: string;
@@ -111,18 +112,22 @@ export default function BinHistoryPage() {
       let overrideItems: TimelineItem[] = [];
       const overridesResult = await supabase
         .from('bin_location_overrides')
-        .select('id, from_label, to_label, note, created_at')
+        .select('id, from_label, to_label, missing_action, note, created_at')
         .eq('bin_id', binId);
       if (!overridesResult.error && overridesResult.data) {
-        overrideItems = overridesResult.data.map(o => ({
-          kind: 'override' as const,
-          id: o.id,
-          from_label: (o as unknown as { from_label: string | null }).from_label ?? null,
-          to_label: (o as unknown as { to_label: string | null }).to_label ?? null,
-          note: o.note,
-          created_at: o.created_at,
-          sortDate: o.created_at.slice(0, 10),
-        }));
+        overrideItems = overridesResult.data.map(o => {
+          const raw = o as unknown as { from_label: string | null; to_label: string | null; missing_action: string | null };
+          return {
+            kind: 'override' as const,
+            id: o.id,
+            from_label: raw.from_label ?? null,
+            to_label: raw.to_label ?? null,
+            missing_action: raw.missing_action ?? null,
+            note: o.note,
+            created_at: o.created_at,
+            sortDate: o.created_at.slice(0, 10),
+          };
+        });
       }
 
       const merged = [...tripItems, ...overrideItems];
@@ -254,6 +259,14 @@ export default function BinHistoryPage() {
                       )}
                       <p className="text-amber-700 text-xs mt-0.5">Location manually corrected — missing prior trip record.</p>
                       {item.note && <p className="text-gray-600 text-xs mt-0.5">{item.note}</p>}
+                      {item.missing_action && (
+                        <button
+                          onClick={() => router.push(`/trips?prefill_bin=${binId}&prefill_action=${item.missing_action}`)}
+                          className="mt-2 text-xs font-medium text-amber-800 underline hover:text-amber-900"
+                        >
+                          + Enter missing trip
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
