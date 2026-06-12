@@ -54,7 +54,7 @@ export default function StaffPage() {
 
       if (profilesRes.data) {
         const data = profilesRes.data as unknown as Omit<StaffProfile, 'modules'>[];
-        setProfiles(data.map(p => ({ ...p, modules: permsMap[p.user_id] ?? new Set() })));
+        setProfiles(data.map(p => ({ ...p, modules: permsMap[p.user_id] ?? new Set<Module>() })));
       }
       if (locsRes.data) setLocations(locsRes.data);
       setLoading(false);
@@ -85,7 +85,7 @@ export default function StaffPage() {
         location_id: null,
         is_superadmin: false,
         locations: null,
-        modules: new Set(),
+        modules: new Set<Module>(),
       }].sort((a, b) => a.email.localeCompare(b.email)));
       setNewEmail('');
       setNewPassword('');
