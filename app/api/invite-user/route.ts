@@ -6,10 +6,14 @@ const supabaseAdmin = createClient(
 );
 
 export async function POST(req: Request) {
-  const { email } = await req.json();
-  if (!email) return Response.json({ error: 'Email required' }, { status: 400 });
+  const { email, password } = await req.json();
+  if (!email || !password) return Response.json({ error: 'Email and password required' }, { status: 400 });
 
-  const { data, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(email);
+  const { data, error } = await supabaseAdmin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+  });
   if (error) return Response.json({ error: error.message }, { status: 400 });
   return Response.json({ user: data.user });
 }

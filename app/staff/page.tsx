@@ -30,9 +30,10 @@ export default function StaffPage() {
   const [profiles, setProfiles] = useState<StaffProfile[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [loading, setLoading] = useState(true);
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [inviting, setInviting] = useState(false);
-  const [inviteMessage, setInviteMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [newEmail, setNewEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [createMessage, setCreateMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     const init = async () => {
@@ -61,26 +62,27 @@ export default function StaffPage() {
     init();
   }, []);
 
-  const handleInvite = async (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inviteEmail.trim()) return;
-    setInviting(true);
-    setInviteMessage(null);
+    if (!newEmail.trim() || !newPassword.trim()) return;
+    setCreating(true);
+    setCreateMessage(null);
 
     const res = await fetch('/api/invite-user', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: inviteEmail.trim() }),
+      body: JSON.stringify({ email: newEmail.trim(), password: newPassword.trim() }),
     });
     const json = await res.json();
 
     if (!res.ok) {
-      setInviteMessage({ type: 'error', text: json.error ?? 'Failed to send invite' });
+      setCreateMessage({ type: 'error', text: json.error ?? 'Failed to create user' });
     } else {
-      setInviteMessage({ type: 'success', text: `Invite sent to ${inviteEmail.trim()}` });
-      setInviteEmail('');
+      setCreateMessage({ type: 'success', text: `Account created for ${newEmail.trim()}. They can log in immediately.` });
+      setNewEmail('');
+      setNewPassword('');
     }
-    setInviting(false);
+    setCreating(false);
   };
 
   const handleDelete = async (userId: string, email: string) => {
@@ -140,28 +142,36 @@ export default function StaffPage() {
         </p>
       </div>
 
-      {/* Invite form */}
-      <form onSubmit={handleInvite} className="flex gap-2 mb-2">
+      {/* Create user form */}
+      <form onSubmit={handleCreate} className="flex gap-2 mb-2">
         <input
           type="email"
-          placeholder="staff@example.com"
-          value={inviteEmail}
-          onChange={e => setInviteEmail(e.target.value)}
+          placeholder="Email"
+          value={newEmail}
+          onChange={e => setNewEmail(e.target.value)}
           className="flex-1 border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          required
+        />
+        <input
+          type="text"
+          placeholder="Password"
+          value={newPassword}
+          onChange={e => setNewPassword(e.target.value)}
+          className="w-40 border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           required
         />
         <button
           type="submit"
-          disabled={inviting}
+          disabled={creating}
           className="bg-blue-600 text-white text-sm font-medium px-4 py-2 rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors"
         >
-          {inviting ? 'Sending…' : 'Invite'}
+          {creating ? 'Creating…' : 'Create'}
         </button>
       </form>
-      {inviteMessage && (
-        <p className={`text-sm mb-4 ${inviteMessage.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
-          {inviteMessage.text}
-          {inviteMessage.type === 'success' && ' — they will appear here after their first login.'}
+      {createMessage && (
+        <p className={`text-sm mb-4 ${createMessage.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+          {createMessage.text}
+          {createMessage.type === 'success' && ' They will appear here after their first login.'}
         </p>
       )}
 
