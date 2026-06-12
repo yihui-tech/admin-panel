@@ -301,7 +301,7 @@ function TripsPage() {
     if (cl.data) setCustomerLocationOptions(cl.data);
     if (l.data) setLocationOptions(l.data);
     if (ol.data) setOutboundLocationOptions(ol.data);
-    if (b.data) setBinOptions(b.data);
+    if (b.data) setBinOptions(b.data as unknown as BinOption[]);
   };
 
   useEffect(() => {
