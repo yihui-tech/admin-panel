@@ -80,13 +80,13 @@ export default function StaffPage() {
     } else {
       setCreateMessage({ type: 'success', text: `Account created for ${newEmail.trim()}.` });
       setProfiles(prev => [...prev, {
-        user_id: json.user.id,
+        user_id: json.user.id as string,
         email: newEmail.trim(),
         location_id: null,
         is_superadmin: false,
         locations: null,
         modules: new Set<Module>(),
-      }].sort((a, b) => a.email.localeCompare(b.email)));
+      } as StaffProfile].sort((a, b) => a.email.localeCompare(b.email)));
       setNewEmail('');
       setNewPassword('');
     }

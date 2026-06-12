@@ -23,7 +23,18 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  const { data: { user } } = await supabase.auth.getUser();
+  let user = null;
+  try {
+    const { data, error } = await supabase.auth.getUser();
+    if (error && (error.status === 0 || error.message?.includes('fetch'))) {
+      // Network failure from Edge Runtime — pass through, browser handles auth.
+      return supabaseResponse;
+    }
+    user = data.user;
+  } catch {
+    // Network failure thrown — same treatment.
+    return supabaseResponse;
+  }
 
   const isLoginPage = request.nextUrl.pathname === '/login';
 

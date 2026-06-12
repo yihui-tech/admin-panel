@@ -24,8 +24,8 @@ const binsLinks = [
 ];
 
 const reportsLinks = [
-  { href: '/management/cost', label: 'Cost Dashboard' },
-  { href: '/management/driver-location', label: 'Driver Location' },
+  { href: '/management/cost', label: 'Project' },
+  { href: '/management/driver-location', label: 'Driver Checkout' },
   { href: '/management/vehicle-costs', label: 'Vehicle Costs' },
 ];
 
