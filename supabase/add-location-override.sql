@@ -1,6 +1,11 @@
 -- Run in Supabase SQL editor (staging first, then prod).
--- Adds location_override flag to trip_bins to track manual location overrides
--- (used when admin submits a pickup/dropoff with no matching prior trip record).
+-- Creates bin_location_overrides table to record manual bin location corrections.
+-- Used when admin corrects a bin's location without a corresponding trip record
+-- (indicates a missing trip that needs to be traced and entered later).
 
-alter table trip_bins
-  add column if not exists location_override boolean default false;
+create table if not exists bin_location_overrides (
+  id         uuid primary key default gen_random_uuid(),
+  bin_id     uuid references bins(id) on delete cascade,
+  note       text,
+  created_at timestamptz default now()
+);

@@ -22,7 +22,6 @@ type HistoryEntry = {
   id: string;
   action: 'pickup' | 'dropoff' | 'roundtrip';
   removed_at: string | null;
-  location_override: boolean;
   sortDate: string;
   trips: {
     id: string;
@@ -35,6 +34,17 @@ type HistoryEntry = {
     locations: { name: string } | null;
   } | null;
 };
+
+type OverrideEntry = {
+  id: string;
+  note: string | null;
+  created_at: string;
+  sortDate: string;
+};
+
+type TimelineItem =
+  | ({ kind: 'trip' } & HistoryEntry)
+  | ({ kind: 'override' } & OverrideEntry);
 
 type DriverMap = Record<string, string>;
 
@@ -56,14 +66,14 @@ export default function BinHistoryPage() {
   const router = useRouter();
 
   const [bin, setBin] = useState<Bin | null>(null);
-  const [entries, setEntries] = useState<HistoryEntry[]>([]);
+  const [timeline, setTimeline] = useState<TimelineItem[]>([]);
   const [drivers, setDrivers] = useState<DriverMap>({});
   const [loading, setLoading] = useState(true);
   const [newestFirst, setNewestFirst] = useState(true);
 
   useEffect(() => {
     const init = async () => {
-      const [binResult, driverResult, historyResult] = await Promise.all([
+      const [binResult, driverResult, historyResult, overridesResult] = await Promise.all([
         supabase
           .from('bins')
           .select('id, serial_number, type, size, status, customer_id, customer_location_id, location_id, customers(name), customer_locations(name, customers(name)), locations(name)')
@@ -72,9 +82,13 @@ export default function BinHistoryPage() {
         supabase.from('drivers').select('employee_id, name').order('name'),
         supabase
           .from('trip_bins')
-          .select('id, action, removed_at, location_override, trips!inner(id, vehicle_number, driver_id, trip_date, completed_at, customers(name), customer_locations(name, customers(name)), locations!dropoff_id(name))')
+          .select('id, action, removed_at, trips!inner(id, vehicle_number, driver_id, trip_date, completed_at, customers(name), customer_locations(name, customers(name)), locations!dropoff_id(name))')
           .eq('bin_id', binId)
           .eq('trips.status', 'completed'),
+        supabase
+          .from('bin_location_overrides')
+          .select('id, note, created_at')
+          .eq('bin_id', binId),
       ]);
 
       if (binResult.data) setBin(binResult.data as unknown as Bin);
@@ -85,25 +99,35 @@ export default function BinHistoryPage() {
         setDrivers(map);
       }
 
-      if (historyResult.data) {
-        // Attach a sortDate (trip_date preferred, completed_at as fallback) for reliable ordering
-        const rows = (historyResult.data as unknown as Omit<HistoryEntry, 'sortDate'>[]).map(e => ({
-          ...e,
-          sortDate: e.trips?.trip_date ?? e.trips?.completed_at?.slice(0, 10) ?? '',
-        }));
-        // Sort newest first by default
-        rows.sort((a, b) => b.sortDate.localeCompare(a.sortDate));
-        setEntries(rows);
-      }
+      const tripItems: TimelineItem[] = (historyResult.data ?? []).map(e => {
+        const raw = e as unknown as Omit<HistoryEntry, 'sortDate'>;
+        return {
+          kind: 'trip' as const,
+          ...raw,
+          sortDate: raw.trips?.trip_date ?? raw.trips?.completed_at?.slice(0, 10) ?? '',
+        };
+      });
+
+      const overrideItems: TimelineItem[] = (overridesResult.data ?? []).map(o => ({
+        kind: 'override' as const,
+        id: o.id,
+        note: o.note,
+        created_at: o.created_at,
+        sortDate: o.created_at.slice(0, 10),
+      }));
+
+      const merged = [...tripItems, ...overrideItems];
+      merged.sort((a, b) => b.sortDate.localeCompare(a.sortDate));
+      setTimeline(merged);
 
       setLoading(false);
     };
     init();
   }, [binId]);
 
-  const displayed = newestFirst ? entries : [...entries].reverse();
+  const displayed = newestFirst ? timeline : [...timeline].reverse();
 
-  const lastDropoffDate = entries.find(e => e.action === 'dropoff' && !e.removed_at)?.sortDate ?? null;
+  const lastDropoffDate = timeline.find(e => e.kind === 'trip' && e.action === 'dropoff' && !e.removed_at)?.sortDate ?? null;
 
   if (loading) {
     return (
@@ -184,11 +208,11 @@ export default function BinHistoryPage() {
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-base font-semibold text-gray-700">
           Movement History
-          {entries.length > 0 && (
-            <span className="text-gray-400 font-normal text-sm ml-2">{entries.length} events</span>
+          {timeline.length > 0 && (
+            <span className="text-gray-400 font-normal text-sm ml-2">{timeline.length} events</span>
           )}
         </h2>
-        {entries.length > 1 && (
+        {timeline.length > 1 && (
           <button
             onClick={() => setNewestFirst(f => !f)}
             className="text-xs text-gray-400 hover:text-blue-600 border rounded px-2 py-1"
@@ -198,24 +222,40 @@ export default function BinHistoryPage() {
         )}
       </div>
 
-      {entries.length === 0 ? (
-        <p className="text-sm text-gray-400 text-center py-8">No completed trips recorded for this bin.</p>
+      {timeline.length === 0 ? (
+        <p className="text-sm text-gray-400 text-center py-8">No movement history for this bin.</p>
       ) : (
         <div className="relative">
           <div className="absolute left-3 top-2 bottom-2 w-px bg-gray-200" />
           <div className="space-y-4">
-            {displayed.map(entry => {
-              const date = entry.trips?.trip_date ?? entry.trips?.completed_at?.slice(0, 10) ?? null;
-              const isDropoff = entry.action === 'dropoff';
-              const isPickup  = entry.action === 'pickup';
-              const isRemoved = !!entry.removed_at;
+            {displayed.map(item => {
+              if (item.kind === 'override') {
+                return (
+                  <div key={item.id} className="flex gap-4">
+                    <div className="mt-1 w-6 h-6 rounded-full flex items-center justify-center shrink-0 z-10 text-xs font-bold bg-amber-100 text-amber-700">!</div>
+                    <div className="flex-1 border border-amber-200 rounded-lg px-3 py-2.5 text-sm bg-amber-50">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">Location manually corrected</span>
+                        <span className="text-xs text-gray-400">{formatDate(item.created_at)}</span>
+                      </div>
+                      <p className="text-amber-700 text-xs mt-1">Missing prior trip — location was changed without a trip record.</p>
+                      {item.note && <p className="text-gray-600 text-xs mt-0.5">{item.note}</p>}
+                    </div>
+                  </div>
+                );
+              }
+
+              const date = item.trips?.trip_date ?? item.trips?.completed_at?.slice(0, 10) ?? null;
+              const isDropoff = item.action === 'dropoff';
+              const isPickup  = item.action === 'pickup';
+              const isRemoved = !!item.removed_at;
               const dotColor  = isRemoved ? 'bg-gray-100 text-gray-400' : isDropoff ? 'bg-blue-100 text-blue-700' : isPickup ? 'bg-orange-100 text-orange-700' : 'bg-purple-100 text-purple-700';
               const tagColor  = isRemoved ? 'bg-gray-100 text-gray-400' : isDropoff ? 'bg-blue-50 text-blue-700'  : isPickup ? 'bg-orange-50 text-orange-700'  : 'bg-purple-50 text-purple-700';
               const dotSymbol = isDropoff ? '↓' : isPickup ? '↑' : '↕';
               const actionLabel = isDropoff ? 'Issued to customer' : isPickup ? 'Collected from customer' : 'Roundtrip';
 
               return (
-                <div key={entry.id} className="flex gap-4">
+                <div key={item.id} className="flex gap-4">
                   <div className={`mt-1 w-6 h-6 rounded-full flex items-center justify-center shrink-0 z-10 text-xs font-bold ${dotColor}`}>
                     {dotSymbol}
                   </div>
@@ -224,35 +264,34 @@ export default function BinHistoryPage() {
                       <div className="flex items-center gap-1.5">
                         <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${tagColor}`}>{actionLabel}</span>
                         {isRemoved && <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-red-50 text-red-500 line-through">Removed</span>}
-                        {entry.location_override && !isRemoved && <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">Missing prior trip</span>}
                       </div>
                       <span className="text-xs text-gray-400">{formatDate(date)}</span>
                     </div>
                     <div className="text-gray-600 space-y-0.5 mt-1.5">
-                      {(entry.trips?.customer_locations || entry.trips?.customers) && (
+                      {(item.trips?.customer_locations || item.trips?.customers) && (
                         <div>
                           <span className="text-gray-400">Customer: </span>
-                          {entry.trips.customer_locations
-                            ? `${entry.trips.customer_locations.customers?.name ?? ''} · ${entry.trips.customer_locations.name}`
-                            : entry.trips.customers?.name}
+                          {item.trips.customer_locations
+                            ? `${item.trips.customer_locations.customers?.name ?? ''} · ${item.trips.customer_locations.name}`
+                            : item.trips.customers?.name}
                         </div>
                       )}
-                      {entry.trips?.locations && (
+                      {item.trips?.locations && (
                         <div>
                           <span className="text-gray-400">Yard: </span>
-                          {entry.trips.locations.name}
+                          {item.trips.locations.name}
                         </div>
                       )}
-                      {entry.trips?.driver_id && (
+                      {item.trips?.driver_id && (
                         <div>
                           <span className="text-gray-400">Driver: </span>
-                          {drivers[entry.trips.driver_id] ?? entry.trips.driver_id}
+                          {drivers[item.trips.driver_id] ?? item.trips.driver_id}
                         </div>
                       )}
-                      {entry.trips?.vehicle_number && (
+                      {item.trips?.vehicle_number && (
                         <div>
                           <span className="text-gray-400">Vehicle: </span>
-                          {entry.trips.vehicle_number}
+                          {item.trips.vehicle_number}
                         </div>
                       )}
                     </div>

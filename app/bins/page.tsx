@@ -90,6 +90,8 @@ export default function BinsPage() {
   const [editingBin, setEditingBin] = useState<Bin | null>(null);
   const [form, setForm] = useState<BinForm>(emptyForm);
   const [loading, setLoading] = useState(false);
+  const [missingTrip, setMissingTrip] = useState(false);
+  const [missingTripNote, setMissingTripNote] = useState('');
   const [locationFilter, setLocationFilter] = useState<'all' | 'customer' | 'yard' | 'unknown'>('all');
   const [typeFilter, setTypeFilter] = useState('');
   const [sizeFilter, setSizeFilter] = useState('');
@@ -147,12 +149,16 @@ export default function BinsPage() {
   const openCreate = () => {
     setForm(emptyForm);
     setEditingBin(null);
+    setMissingTrip(false);
+    setMissingTripNote('');
     setShowModal(true);
   };
 
   const openEdit = (bin: Bin) => {
     setForm(binToForm(bin));
     setEditingBin(bin);
+    setMissingTrip(false);
+    setMissingTripNote('');
     setShowModal(true);
   };
 
@@ -170,10 +176,19 @@ export default function BinsPage() {
     setLoading(true);
     const payload = formToPayload(form);
     let error;
+    let savedBinId = editingBin?.id;
     if (editingBin) {
       ({ error } = await supabase.from('bins').update(payload).eq('id', editingBin.id));
     } else {
-      ({ error } = await supabase.from('bins').insert(payload));
+      const { data, error: insertError } = await supabase.from('bins').insert(payload).select('id').single();
+      error = insertError;
+      savedBinId = data?.id;
+    }
+    if (!error && editingBin && missingTrip && savedBinId) {
+      await supabase.from('bin_location_overrides').insert({
+        bin_id: savedBinId,
+        note: missingTripNote || null,
+      });
     }
     setLoading(false);
     if (!error) {
@@ -496,6 +511,29 @@ export default function BinsPage() {
                     onChange={handleChange}
                     className="w-full border rounded px-3 py-2"
                   />
+                </div>
+              )}
+
+              {editingBin && (
+                <div className={`rounded-lg p-3 border ${missingTrip ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'}`}>
+                  <label className="flex items-start gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={missingTrip}
+                      onChange={e => setMissingTrip(e.target.checked)}
+                      className="mt-0.5 accent-amber-500"
+                    />
+                    <span className="text-sm font-medium text-amber-800">Missing prior trip — location manually corrected</span>
+                  </label>
+                  {missingTrip && (
+                    <input
+                      type="text"
+                      value={missingTripNote}
+                      onChange={e => setMissingTripNote(e.target.value)}
+                      placeholder="Optional note (e.g. bin found at Jurong site, dropoff trip missing)"
+                      className="mt-2 w-full border border-amber-300 rounded px-3 py-1.5 text-sm bg-white"
+                    />
+                  )}
                 </div>
               )}
 
