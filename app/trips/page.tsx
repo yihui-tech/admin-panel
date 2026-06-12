@@ -40,7 +40,7 @@ type Trip = {
   customer_locations: { name: string; address: string | null; contact_person: string | null; contact_number: string | null } | null;
   locations: { name: string; address: string | null } | null;
   weigh_bridge: { net_weight: number }[];
-  trip_bins: { id: string; bin_id: string; action: string; removed_at: string | null; bins: { serial_number: string } | null }[];
+  trip_bins: { id: string; bin_id: string; action: string; removed_at: string | null; location_override: boolean; bins: { serial_number: string } | null }[];
 };
 
 type Vehicle = { plate_number: string };
@@ -49,7 +49,7 @@ type CustomerOption = { customer_id: number; name: string; address: string | nul
 type CustomerLocationOption = { id: number; customer_id: number; name: string; address: string | null; contact_person: string | null; contact_number: string | null };
 type LocationOption = { id: number; name: string; address: string | null };
 type BinOption = { id: string; serial_number: string; customer_id: number | null; location_id: number | null; customer_location_id: number | null };
-type BinAction = { bin_id: string; action: 'dropoff' | 'pickup' | 'roundtrip' };
+type BinAction = { bin_id: string; action: 'dropoff' | 'pickup' | 'roundtrip'; location_override?: boolean };
 
 const emptyForm = {
   vehicle_number: '',
@@ -211,7 +211,7 @@ export default function TripsPage() {
   const fetchTrips = async () => {
     const { data } = await supabase
       .from('trips')
-      .select('id, vehicle_number, driver_id, customer_id, customer_location_id, dropoff_id, source_location_id, trip_type, requester, remarks, status, trip_order, trip_date, created_at, completed_at, customers(name, address, contact_person, contact_number), customer_locations(name, address, contact_person, contact_number), locations(name, address), weigh_bridge(net_weight), trip_bins(id, bin_id, action, removed_at, bins(serial_number))')
+      .select('id, vehicle_number, driver_id, customer_id, customer_location_id, dropoff_id, source_location_id, trip_type, requester, remarks, status, trip_order, trip_date, created_at, completed_at, customers(name, address, contact_person, contact_number), customer_locations(name, address, contact_person, contact_number), locations(name, address), weigh_bridge(net_weight), trip_bins(id, bin_id, action, removed_at, location_override, bins(serial_number))')
       .order('created_at', { ascending: false });
     if (data) setTrips(data as unknown as Trip[]);
   };
@@ -298,7 +298,7 @@ export default function TripsPage() {
       requester: trip.requester ?? '',
       remarks: trip.remarks ?? '',
     });
-    setBinActions(trip.trip_bins.filter(tb => !tb.removed_at).map(tb => ({ bin_id: tb.bin_id, action: tb.action as 'dropoff' | 'pickup' | 'roundtrip' })));
+    setBinActions(trip.trip_bins.filter(tb => !tb.removed_at).map(tb => ({ bin_id: tb.bin_id, action: tb.action as 'dropoff' | 'pickup' | 'roundtrip', location_override: tb.location_override })));
     setEditingTrip(trip);
     setShowNewCustomer(false);
     setNewCustomerForm(emptyCustomerForm);
@@ -356,7 +356,7 @@ export default function TripsPage() {
     e.preventDefault();
 
     const conflictErrors = binActions
-      .filter(ba => ba.bin_id)
+      .filter(ba => ba.bin_id && !ba.location_override)
       .map(ba => binActionConflict(ba.bin_id, ba.action))
       .filter(Boolean);
     if (conflictErrors.length > 0) {
@@ -401,7 +401,7 @@ export default function TripsPage() {
     const validBinActions = binActions.filter(ba => ba.bin_id);
     if (validBinActions.length > 0) {
       await supabase.from('trip_bins').insert(
-        validBinActions.map(ba => ({ trip_id: tripId, bin_id: ba.bin_id, action: ba.action }))
+        validBinActions.map(ba => ({ trip_id: tripId, bin_id: ba.bin_id, action: ba.action, location_override: ba.location_override ?? false }))
       );
     }
 
@@ -722,7 +722,7 @@ export default function TripsPage() {
                           <select
                             value={ba.action}
                             onChange={e => setBinActions(prev => prev.map((a, j) => j === i ? { ...a, action: e.target.value as 'dropoff' | 'pickup' | 'roundtrip' } : a))}
-                            className={`border rounded px-3 py-2 text-sm ${conflict ? 'border-red-400 bg-red-50' : ''}`}
+                            className={`border rounded px-3 py-2 text-sm ${conflict && !ba.location_override ? 'border-red-400 bg-red-50' : conflict && ba.location_override ? 'border-amber-400 bg-amber-50' : ''}`}
                           >
                             <option value="dropoff" disabled={!!(selectedBin && binAtCustomer(selectedBin))}>Drop off</option>
                             <option value="pickup" disabled={!!(selectedBin && binAtYard(selectedBin))}>Pick up</option>
@@ -736,8 +736,19 @@ export default function TripsPage() {
                             ×
                           </button>
                         </div>
-                        {conflict && (
+                        {conflict && !ba.location_override && (
                           <p className="text-xs text-red-600 pl-1">{conflict}</p>
+                        )}
+                        {conflict && (
+                          <label className="flex items-center gap-1.5 pl-1 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={!!ba.location_override}
+                              onChange={e => setBinActions(prev => prev.map((a, j) => j === i ? { ...a, location_override: e.target.checked } : a))}
+                              className="accent-amber-500"
+                            />
+                            <span className="text-xs text-amber-700 font-medium">Override — missing prior trip record</span>
+                          </label>
                         )}
                       </div>
                     );
