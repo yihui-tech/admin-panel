@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
+import { Check } from 'lucide-react';
 
 type VehicleRow = {
   plate_number: string;
@@ -16,6 +17,8 @@ type VehicleRow = {
   total_litres: number;
   total_km: number;
 };
+
+type SaveStatus = 'idle' | 'saving' | 'saved';
 
 function toMonthValue(d: Date) {
   return d.toISOString().slice(0, 7);
@@ -40,15 +43,18 @@ const PURPOSE_LABEL: Record<string, string> = {
 export default function VehicleCostsPage() {
   const [month, setMonth] = useState(() => toMonthValue(new Date()));
   const [costPerLitre, setCostPerLitre] = useState('');
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [rows, setRows] = useState<VehicleRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
 
+  // Load vehicle data when month changes
   useEffect(() => {
     const load = async () => {
       setLoading(true);
@@ -63,31 +69,55 @@ export default function VehicleCostsPage() {
     load();
   }, [month]);
 
+  // Load saved cost per litre when month changes
+  useEffect(() => {
+    const loadPrice = async () => {
+      setCostPerLitre('');
+      const { data } = await supabase
+        .from('diesel_prices')
+        .select('cost_per_litre')
+        .eq('month', `${month}-01`)
+        .maybeSingle();
+      if (data?.cost_per_litre) setCostPerLitre(String(data.cost_per_litre));
+    };
+    loadPrice();
+  }, [month]);
+
+  const handlePriceBlur = async () => {
+    const val = parseFloat(costPerLitre);
+    if (!val || val <= 0) return;
+    setSaveStatus('saving');
+    await supabase
+      .from('diesel_prices')
+      .upsert({ month: `${month}-01`, cost_per_litre: val, updated_at: new Date().toISOString() });
+    setSaveStatus('saved');
+    if (savedTimer.current) clearTimeout(savedTimer.current);
+    savedTimer.current = setTimeout(() => setSaveStatus('idle'), 2000);
+  };
+
   const cpl = parseFloat(costPerLitre) || 0;
 
   const computed = useMemo(() => rows.map(r => {
-    const fixedTotal   = r.leasing_cost + r.depreciation + r.insurance_premium + r.road_tax + r.vpc_season_parking;
-    const dieselCost   = cpl > 0 ? r.total_litres * cpl : null;
-    const totalCost    = cpl > 0 ? fixedTotal + dieselCost! : null;
-    const kmPerLitre   = r.total_litres > 0 && r.total_km > 0 ? r.total_km / r.total_litres : null;
-    const costPerKm    = totalCost !== null && r.total_km > 0 ? totalCost / r.total_km : null;
+    const fixedTotal = r.leasing_cost + r.depreciation + r.insurance_premium + r.road_tax + r.vpc_season_parking;
+    const dieselCost = cpl > 0 ? r.total_litres * cpl : null;
+    const totalCost  = cpl > 0 ? fixedTotal + dieselCost! : null;
+    const kmPerLitre = r.total_litres > 0 && r.total_km > 0 ? r.total_km / r.total_litres : null;
+    const costPerKm  = totalCost !== null && r.total_km > 0 ? totalCost / r.total_km : null;
     return { ...r, fixedTotal, dieselCost, totalCost, kmPerLitre, costPerKm };
   }), [rows, cpl]);
 
   const totals = useMemo(() => ({
     fixedTotal:  computed.reduce((s, r) => s + r.fixedTotal,  0),
-    dieselCost:  cpl > 0 ? computed.reduce((s, r) => s + (r.dieselCost ?? 0),  0) : null,
-    totalCost:   cpl > 0 ? computed.reduce((s, r) => s + (r.totalCost  ?? 0),  0) : null,
+    dieselCost:  cpl > 0 ? computed.reduce((s, r) => s + (r.dieselCost ?? 0), 0) : null,
+    totalCost:   cpl > 0 ? computed.reduce((s, r) => s + (r.totalCost  ?? 0), 0) : null,
     totalLitres: computed.reduce((s, r) => s + r.total_litres, 0),
     totalKm:     computed.reduce((s, r) => s + r.total_km,     0),
   }), [computed, cpl]);
 
   const fleetKmPerLitre = totals.totalLitres > 0 && totals.totalKm > 0
-    ? totals.totalKm / totals.totalLitres
-    : null;
+    ? totals.totalKm / totals.totalLitres : null;
   const fleetCostPerKm = totals.totalCost !== null && totals.totalKm > 0
-    ? totals.totalCost / totals.totalKm
-    : null;
+    ? totals.totalCost / totals.totalKm : null;
 
   return (
     <main className="bg-white text-gray-900 min-h-screen p-8">
@@ -104,15 +134,26 @@ export default function VehicleCostsPage() {
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
               <label className="text-sm text-gray-500 whitespace-nowrap">Cost / litre (SGD)</label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="e.g. 1.85"
-                value={costPerLitre}
-                onChange={e => setCostPerLitre(e.target.value)}
-                className="border border-gray-300 rounded-md px-3 py-1.5 text-sm w-28"
-              />
+              <div className="relative">
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="e.g. 1.85"
+                  value={costPerLitre}
+                  onChange={e => { setCostPerLitre(e.target.value); setSaveStatus('idle'); }}
+                  onBlur={handlePriceBlur}
+                  className="border border-gray-300 rounded-md px-3 py-1.5 text-sm w-28"
+                />
+              </div>
+              {saveStatus === 'saving' && (
+                <span className="text-xs text-gray-400">Saving…</span>
+              )}
+              {saveStatus === 'saved' && (
+                <span className="inline-flex items-center gap-1 text-xs text-green-600">
+                  <Check size={11} /> Saved
+                </span>
+              )}
             </div>
             <input
               type="month"
@@ -124,7 +165,7 @@ export default function VehicleCostsPage() {
         </div>
 
         {loading && <p className="text-sm text-gray-400">Loading...</p>}
-        {error  && <p className="text-sm text-red-500">{error}</p>}
+        {error   && <p className="text-sm text-red-500">{error}</p>}
 
         {!loading && !error && rows.length === 0 && (
           <p className="text-sm text-gray-400">No vehicle data found for this month.</p>
@@ -141,13 +182,17 @@ export default function VehicleCostsPage() {
               <div className="border border-gray-200 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Total Diesel Cost</p>
                 <p className="text-lg font-semibold">
-                  {totals.dieselCost !== null ? fmtCurrency(totals.dieselCost) : <span className="text-gray-400 text-sm">Enter cost/litre</span>}
+                  {totals.dieselCost !== null
+                    ? fmtCurrency(totals.dieselCost)
+                    : <span className="text-gray-400 text-sm">Enter cost/litre</span>}
                 </p>
               </div>
               <div className="border border-gray-200 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Total Fleet Cost</p>
                 <p className="text-lg font-semibold">
-                  {totals.totalCost !== null ? fmtCurrency(totals.totalCost) : <span className="text-gray-400 text-sm">Enter cost/litre</span>}
+                  {totals.totalCost !== null
+                    ? fmtCurrency(totals.totalCost)
+                    : <span className="text-gray-400 text-sm">Enter cost/litre</span>}
                 </p>
               </div>
               <div className="border border-gray-200 rounded-lg p-4">
@@ -216,7 +261,6 @@ export default function VehicleCostsPage() {
                     </tr>
                   ))}
                 </tbody>
-                {/* Totals row */}
                 <tfoot>
                   <tr className="border-t-2 border-gray-300 font-semibold">
                     <td className="pt-2.5 pr-4" colSpan={3}>Total</td>
