@@ -78,7 +78,15 @@ export default function StaffPage() {
     if (!res.ok) {
       setCreateMessage({ type: 'error', text: json.error ?? 'Failed to create user' });
     } else {
-      setCreateMessage({ type: 'success', text: `Account created for ${newEmail.trim()}. They can log in immediately.` });
+      setCreateMessage({ type: 'success', text: `Account created for ${newEmail.trim()}.` });
+      setProfiles(prev => [...prev, {
+        user_id: json.user.id,
+        email: newEmail.trim(),
+        location_id: null,
+        is_superadmin: false,
+        locations: null,
+        modules: new Set(),
+      }].sort((a, b) => a.email.localeCompare(b.email)));
       setNewEmail('');
       setNewPassword('');
     }
