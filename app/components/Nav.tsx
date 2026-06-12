@@ -24,8 +24,8 @@ const binsLinks = [
 ];
 
 const reportsLinks = [
-  { href: '/management/cost', label: 'Cost Dashboard' },
-  { href: '/management/driver-location', label: 'Driver Location' },
+  { href: '/management/cost', label: 'Project' },
+  { href: '/management/driver-location', label: 'Driver Checkout' },
   { href: '/management/vehicle-costs', label: 'Vehicle Costs' },
 ];
 
@@ -40,9 +40,9 @@ export default function Nav() {
   );
 
   useEffect(() => {
-    const init = async () => {
+    const fetchModules = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) { setModules(new Set()); return; }
 
       const { data: profile } = await supabase
         .from('user_profiles')
@@ -65,8 +65,16 @@ export default function Nav() {
 
       setModules(new Set(perms?.map(p => p.module) ?? []));
     };
-    init();
-  }, []);
+
+    fetchModules();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') setModules(new Set());
+      else fetchModules();
+    });
+
+    return () => subscription.unsubscribe();
+  }, [pathname]);
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();

@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Pencil } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Pencil, ExternalLink } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 type Project = {
@@ -22,6 +23,7 @@ const emptyForm = {
 };
 
 export default function ProjectsPage() {
+  const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
   const [mandayMap, setMandayMap] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
@@ -173,7 +175,7 @@ export default function ProjectsPage() {
               <th className="text-left px-4 py-3 font-medium">End Date</th>
               <th className="text-left px-4 py-3 font-medium">Status</th>
               <th className="text-right px-4 py-3 font-medium">Mandays</th>
-              <th className="text-left px-4 py-3 font-medium"></th>
+              <th className="text-left px-4 py-3 font-medium w-20"></th>
             </tr>
           </thead>
           <tbody>
@@ -195,9 +197,18 @@ export default function ProjectsPage() {
                   {mandayMap[p.id] ? mandayMap[p.id].toLocaleString() : '—'}
                 </td>
                 <td className="px-4 py-3">
-                  <button onClick={() => setEditingProject(p)} title="Edit" className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded">
-                    <Pencil size={14} />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => router.push(`/projects/${p.id}`)}
+                      title="View costing"
+                      className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded"
+                    >
+                      <ExternalLink size={14} />
+                    </button>
+                    <button onClick={() => setEditingProject(p)} title="Edit" className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded">
+                      <Pencil size={14} />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

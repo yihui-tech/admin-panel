@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabase';
 
 type ProjectCost = {
@@ -28,6 +29,7 @@ const getWorkingDays = (year: number, month: number): number => {
 };
 
 export default function CostPage() {
+  const router = useRouter();
   const [projectCosts, setProjectCosts] = useState<ProjectCost[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState(() => {
@@ -145,7 +147,7 @@ export default function CostPage() {
 
   return (
     <main className="max-w-5xl mx-auto p-8 bg-white text-gray-900 min-h-screen">
-      <h1 className="text-2xl font-bold mb-6">Project Cost Dashboard</h1>
+      <h1 className="text-2xl font-bold mb-6">Project</h1>
 
       {/* Controls */}
       <div className="flex items-center gap-4 mb-6">
@@ -220,7 +222,11 @@ export default function CostPage() {
               )}
               {projectCosts.map(p => (
                 <tr key={p.id} className="border-b last:border-0 hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium">{p.name}</td>
+                  <td className="px-4 py-3 font-medium">
+                    <button onClick={() => router.push(`/projects/${p.id}`)} className="hover:text-blue-600 hover:underline text-left">
+                      {p.name}
+                    </button>
+                  </td>
                   <td className="px-4 py-3 text-gray-500">{p.location}</td>
                   <td className="px-4 py-3">
                     <span className={statusBadge(p.status)}>{p.status}</span>
