@@ -75,7 +75,8 @@ export default function BinHistoryPage() {
 
   useEffect(() => {
     const init = async () => {
-      const [binResult, driverResult, historyResult, overridesResult] = await Promise.all([
+      // Core queries: bin header, drivers, trip history
+      const [binResult, driverResult, historyResult] = await Promise.all([
         supabase
           .from('bins')
           .select('id, serial_number, type, size, status, customer_id, customer_location_id, location_id, customers(name), customer_locations(name, customers(name)), locations(name)')
@@ -87,10 +88,6 @@ export default function BinHistoryPage() {
           .select('id, action, removed_at, trips!inner(id, vehicle_number, driver_id, trip_date, completed_at, customers(name), customer_locations(name, customers(name)), locations!dropoff_id(name))')
           .eq('bin_id', binId)
           .eq('trips.status', 'completed'),
-        supabase
-          .from('bin_location_overrides')
-          .select('id, from_label, to_label, note, created_at')
-          .eq('bin_id', binId),
       ]);
 
       if (binResult.data) setBin(binResult.data as unknown as Bin);
@@ -110,15 +107,23 @@ export default function BinHistoryPage() {
         };
       });
 
-      const overrideItems: TimelineItem[] = (overridesResult.data ?? []).map(o => ({
-        kind: 'override' as const,
-        id: o.id,
-        from_label: (o as unknown as { from_label: string | null }).from_label ?? null,
-        to_label: (o as unknown as { to_label: string | null }).to_label ?? null,
-        note: o.note,
-        created_at: o.created_at,
-        sortDate: o.created_at.slice(0, 10),
-      }));
+      // Overrides query is separate — if the table doesn't exist yet it fails silently
+      let overrideItems: TimelineItem[] = [];
+      const overridesResult = await supabase
+        .from('bin_location_overrides')
+        .select('id, from_label, to_label, note, created_at')
+        .eq('bin_id', binId);
+      if (!overridesResult.error && overridesResult.data) {
+        overrideItems = overridesResult.data.map(o => ({
+          kind: 'override' as const,
+          id: o.id,
+          from_label: (o as unknown as { from_label: string | null }).from_label ?? null,
+          to_label: (o as unknown as { to_label: string | null }).to_label ?? null,
+          note: o.note,
+          created_at: o.created_at,
+          sortDate: o.created_at.slice(0, 10),
+        }));
+      }
 
       const merged = [...tripItems, ...overrideItems];
       merged.sort((a, b) => b.sortDate.localeCompare(a.sortDate));
