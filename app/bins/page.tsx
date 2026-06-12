@@ -204,13 +204,12 @@ export default function BinsPage() {
         }
         return 'Unknown';
       })();
-      const { error: overrideError } = await supabase.from('bin_location_overrides').insert({
+      await supabase.from('bin_location_overrides').insert({
         bin_id: savedBinId,
         from_label: fromLabel,
         to_label: toLabel,
         note: missingTripNote || null,
       });
-      if (overrideError) alert('Failed to save missing trip record: ' + overrideError.message);
     }
     setLoading(false);
     if (!error) {
