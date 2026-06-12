@@ -204,10 +204,12 @@ export default function BinsPage() {
         }
         return 'Unknown';
       })();
+      const missingAction = form.locationType === 'customer' ? 'dropoff' : form.locationType === 'location' ? 'pickup' : null;
       await supabase.from('bin_location_overrides').insert({
         bin_id: savedBinId,
         from_label: fromLabel,
         to_label: toLabel,
+        missing_action: missingAction,
         note: missingTripNote || null,
       });
     }

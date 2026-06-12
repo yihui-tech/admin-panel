@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { supabase } from '../lib/supabase';
 import {
   DndContext,
@@ -203,6 +204,11 @@ export default function TripsPage() {
   const [driverFilter, setDriverFilter] = useState('');
   const [dateFilter, setDateFilter] = useState('');
 
+  const searchParams = useSearchParams();
+  const prefillBinId = searchParams.get('prefill_bin');
+  const prefillAction = searchParams.get('prefill_action') as 'dropoff' | 'pickup' | null;
+  const prefillDone = useRef(false);
+
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(TouchSensor),
@@ -237,6 +243,17 @@ export default function TripsPage() {
     fetchTrips();
     fetchLookups();
   }, []);
+
+  useEffect(() => {
+    if (prefillBinId && binOptions.length > 0 && !prefillDone.current) {
+      prefillDone.current = true;
+      setForm(emptyForm);
+      setEditingTrip(null);
+      setShowNewCustomer(false);
+      setBinActions([{ bin_id: prefillBinId, action: prefillAction ?? 'dropoff' }]);
+      setShowModal(true);
+    }
+  }, [binOptions]);
 
   const canReorder = !!driverFilter && !!dateFilter;
 
