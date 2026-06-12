@@ -172,7 +172,7 @@ export default function HomePage() {
           <div className="lg:col-span-2">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-lg font-semibold">Project Costs — {currentMonthLabel}</h2>
-              <Link href="/cost" className="text-sm text-blue-600 hover:underline">Full dashboard →</Link>
+              <Link href="/management/cost" className="text-sm text-blue-600 hover:underline">Full dashboard →</Link>
             </div>
 
             <div className="bg-blue-50 border border-blue-100 rounded-lg p-5 mb-4">
