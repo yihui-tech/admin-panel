@@ -15,5 +15,13 @@ export async function POST(req: Request) {
     email_confirm: true,
   });
   if (error) return Response.json({ error: error.message }, { status: 400 });
+
+  // Create user_profiles row immediately so admin can set permissions without waiting for first login
+  await supabaseAdmin.from('user_profiles').insert({
+    user_id: data.user.id,
+    email,
+    is_superadmin: false,
+  });
+
   return Response.json({ user: data.user });
 }
