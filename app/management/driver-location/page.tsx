@@ -202,6 +202,9 @@ export default function DriverLocationPage() {
                       <tr key={`${r.worker_id}-${r.work_date}-${i}`} className="hover:bg-gray-50">
                         <td className="py-2.5 pr-4 text-gray-500 whitespace-nowrap">
                           {new Date(r.work_date).toLocaleDateString('en-SG', { day: '2-digit', month: 'short' })}
+                          <span className="text-gray-400 ml-1">
+                            {new Date(r.work_date).toLocaleDateString('en-SG', { weekday: 'short' })}
+                          </span>
                         </td>
                         <td className="py-2.5 pr-4 font-medium">{r.employee_name}</td>
                         <td className="py-2.5 pr-4 text-gray-500">{r.vehicle_plate ?? '—'}</td>
