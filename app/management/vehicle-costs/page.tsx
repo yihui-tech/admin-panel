@@ -44,6 +44,7 @@ export default function VehicleCostsPage() {
   const [month, setMonth] = useState(() => toMonthValue(new Date()));
   const [costPerLitre, setCostPerLitre] = useState('');
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+  const [priceError, setPriceError] = useState<string | null>(null);
   const [rows, setRows] = useState<VehicleRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,13 +73,14 @@ export default function VehicleCostsPage() {
   // Load saved cost per litre when month changes
   useEffect(() => {
     const loadPrice = async () => {
+      setPriceError(null);
       setCostPerLitre('');
       const { data, error } = await supabase
         .from('diesel_prices')
         .select('cost_per_litre')
         .eq('month', `${month}-01`)
         .maybeSingle();
-      if (error) { console.error('diesel_prices load error:', error); return; }
+      if (error) { setPriceError(`Load failed: ${error.message}`); return; }
       if (data != null && data.cost_per_litre != null) {
         setCostPerLitre(String(data.cost_per_litre));
       }
@@ -90,9 +92,15 @@ export default function VehicleCostsPage() {
     const val = parseFloat(costPerLitre);
     if (!val || val <= 0) return;
     setSaveStatus('saving');
-    await supabase
+    setPriceError(null);
+    const { error: saveErr } = await supabase
       .from('diesel_prices')
       .upsert({ month: `${month}-01`, cost_per_litre: val, updated_at: new Date().toISOString() });
+    if (saveErr) {
+      setPriceError(`Save failed: ${saveErr.message}`);
+      setSaveStatus('idle');
+      return;
+    }
     setSaveStatus('saved');
     if (savedTimer.current) clearTimeout(savedTimer.current);
     savedTimer.current = setTimeout(() => setSaveStatus('idle'), 2000);
@@ -149,6 +157,9 @@ export default function VehicleCostsPage() {
                   className="border border-gray-300 rounded-md px-3 py-1.5 text-sm w-28"
                 />
               </div>
+              {priceError && (
+                <span className="text-xs text-red-500">{priceError}</span>
+              )}
               {saveStatus === 'saving' && (
                 <span className="text-xs text-gray-400">Saving…</span>
               )}
