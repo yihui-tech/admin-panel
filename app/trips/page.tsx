@@ -52,7 +52,7 @@ type CustomerOption = { customer_id: number; name: string; address: string | nul
 type CustomerLocationOption = { id: number; customer_id: number; name: string; address: string | null; contact_person: string | null; contact_number: string | null };
 type LocationOption = { id: number; name: string; address: string | null };
 type BinOption = { id: string; serial_number: string; customer_id: number | null; location_id: number | null; customer_location_id: number | null };
-type BinAction = { bin_id: string; action: 'dropoff' | 'pickup' | 'roundtrip' };
+type BinAction = { bin_id: string; action: 'dropoff' | 'pickup' | 'roundtrip'; location_override?: boolean };
 
 const emptyForm = {
   vehicle_number: '',
@@ -252,7 +252,7 @@ function TripsPage() {
       setForm(emptyForm);
       setEditingTrip(null);
       setShowNewCustomer(false);
-      setBinActions([{ bin_id: prefillBinId, action: prefillAction ?? 'dropoff' }]);
+      setBinActions([{ bin_id: prefillBinId, action: prefillAction ?? 'dropoff', location_override: true }]);
       setShowModal(true);
     }
   }, [binOptions]);
@@ -375,7 +375,7 @@ function TripsPage() {
     e.preventDefault();
 
     const conflictErrors = binActions
-      .filter(ba => ba.bin_id)
+      .filter(ba => ba.bin_id && !ba.location_override)
       .map(ba => binActionConflict(ba.bin_id, ba.action))
       .filter(Boolean);
     if (conflictErrors.length > 0) {
@@ -420,7 +420,7 @@ function TripsPage() {
     const validBinActions = binActions.filter(ba => ba.bin_id);
     if (validBinActions.length > 0) {
       await supabase.from('trip_bins').insert(
-        validBinActions.map(ba => ({ trip_id: tripId, bin_id: ba.bin_id, action: ba.action }))
+        validBinActions.map(ba => ({ trip_id: tripId, bin_id: ba.bin_id, action: ba.action, location_override: ba.location_override ?? false }))
       );
     }
 
