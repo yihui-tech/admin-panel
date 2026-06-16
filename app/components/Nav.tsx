@@ -20,6 +20,8 @@ const tripsLinks = [
 
 const binsLinks = [
   { href: '/bins', label: 'Bins' },
+  { href: '/bin-movements', label: 'Movements' },
+  { href: '/missing-trips', label: 'Missing Trips' },
   { href: '/analytics', label: 'Analytics' },
 ];
 
@@ -27,6 +29,7 @@ const reportsLinks = [
   { href: '/management/cost', label: 'Project' },
   { href: '/management/driver-location', label: 'Driver Checkout' },
   { href: '/management/vehicle-costs', label: 'Vehicle Costs' },
+  { href: '/management/bins-aging', label: 'Bin Aging' },
 ];
 
 export default function Nav() {
