@@ -77,13 +77,15 @@ export default function CostPage() {
 
       const { data: workers } = await supabase
         .from('workers')
-        .select('employee_id, monthly_rate');
+        .select('employee_id, monthly_rate, "ot_1.5", "ot_2.0"');
 
       if (!workers || !timesheets) return;
 
       const workerRateMap: Record<string, number> = {};
-      workers.forEach(w => {
+      const workerOtMap: Record<string, { ot_1_5: number | null; ot_2_0: number | null }> = {};
+      (workers as unknown as Record<string, number>[]).forEach(w => {
         workerRateMap[w.employee_id] = w.monthly_rate;
+        workerOtMap[w.employee_id] = { ot_1_5: w['ot_1.5'] ?? null, ot_2_0: w['ot_2.0'] ?? null };
       });
 
       const mandayMap: Record<string, number> = {};
@@ -104,9 +106,10 @@ export default function CostPage() {
         const dailyRate = monthlyRate / entryWorkingDays;
         const hourlyRate = dailyRate / 8;
 
+        const otRates = workerOtMap[t.worker_id];
         const regularCost = t.regular_hours > 4 ? dailyRate : (t.regular_hours / 8) * dailyRate;
-        const ot15Cost = t.ot_15_hours * hourlyRate * 1.5;
-        const ot20Cost = t.ot_20_hours * hourlyRate * 2;
+        const ot15Cost = (t.ot_15_hours || 0) * (otRates?.ot_1_5 ?? hourlyRate * 1.5);
+        const ot20Cost = (t.ot_20_hours || 0) * (otRates?.ot_2_0 ?? hourlyRate * 2);
         const totalCost = regularCost + ot15Cost + ot20Cost;
 
         if (!costMap[t.project_id]) {
