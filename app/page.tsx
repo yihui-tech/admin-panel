@@ -24,16 +24,16 @@ type Bin = {
 
 const PAGE_SIZE = 10;
 
-const getWorkingDays = (year: number, month: number): number => {
+const getWorkingDays = (year: number, month: number, phSet: Set<string>): number => {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  let weekdays = 0;
-  let saturdays = 0;
+  let total = 0;
   for (let d = 1; d <= daysInMonth; d++) {
     const day = new Date(year, month, d).getDay();
-    if (day >= 1 && day <= 5) weekdays++;
-    if (day === 6) saturdays++;
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    if (day >= 1 && day <= 5) total += phSet.has(dateStr) ? 0 : 1;
+    else if (day === 6) total += phSet.has(dateStr) ? 0 : 0.5;
   }
-  return weekdays + saturdays * 0.5;
+  return total;
 };
 
 function BinSection({
@@ -106,7 +106,6 @@ export default function HomePage() {
   useEffect(() => {
     const fetchData = async () => {
       const [year, month] = currentMonth.split('-').map(Number);
-      const workingDays = getWorkingDays(year, month - 1);
       const startDate = `${currentMonth}-01`;
       const endDate = new Date(year, month, 0).toISOString().split('T')[0];
 
@@ -115,12 +114,17 @@ export default function HomePage() {
         { data: timesheets },
         { data: workers },
         { data: binsData },
+        { data: holidays },
       ] = await Promise.all([
         supabase.from('projects').select('id, name, status').eq('status', 'active').order('name'),
         supabase.from('timesheets').select('project_id, worker_id, regular_hours, ot_15_hours, ot_20_hours').gte('date', startDate).lte('date', endDate),
         supabase.from('workers').select('employee_id, monthly_rate, "ot_1.5", "ot_2.0"'),
         supabase.from('bins').select('id, serial_number, customer_id, customer_location_id, location_id, customers(name), customer_locations(name), locations(name)').order('serial_number'),
+        supabase.from('public_holidays').select('date'),
       ]);
+
+      const phSet = new Set((holidays || []).map((h: { date: string }) => h.date));
+      const workingDays = getWorkingDays(year, month - 1, phSet);
 
       if (projects && timesheets && workers) {
         const workerRateMap: Record<string, number> = {};
