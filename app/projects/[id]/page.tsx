@@ -65,16 +65,16 @@ const emptyEstimateForm = {
   notes: '',
 };
 
-const getWorkingDays = (year: number, month: number): number => {
+const getWorkingDays = (year: number, month: number, phSet: Set<string>): number => {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  let weekdays = 0;
-  let saturdays = 0;
+  let total = 0;
   for (let d = 1; d <= daysInMonth; d++) {
     const day = new Date(year, month, d).getDay();
-    if (day >= 1 && day <= 5) weekdays++;
-    if (day === 6) saturdays++;
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    if (day >= 1 && day <= 5) total += phSet.has(dateStr) ? 0 : 1;
+    else if (day === 6) total += phSet.has(dateStr) ? 0 : 0.5;
   }
-  return weekdays + saturdays * 0.5;
+  return total;
 };
 
 const fmt = (n: number) =>
@@ -146,8 +146,11 @@ export default function ProjectDetailPage() {
     }
 
     const workerIds = [...new Set(timesheets.map(t => t.worker_id))];
-    const { data: workers } = await supabase
-      .from('workers').select('employee_id, name, monthly_rate, "ot_1.5", "ot_2.0"').in('employee_id', workerIds);
+    const [{ data: workers }, { data: holidays }] = await Promise.all([
+      supabase.from('workers').select('employee_id, name, monthly_rate, "ot_1.5", "ot_2.0"').in('employee_id', workerIds),
+      supabase.from('public_holidays').select('date'),
+    ]);
+    const phSet = new Set((holidays || []).map((h: { date: string }) => h.date));
 
     const rateMap: Record<string, number> = {};
     const nameMap: Record<string, string> = {};
@@ -161,7 +164,7 @@ export default function ProjectDetailPage() {
     const costByWorker: Record<string, number> = {};
     timesheets.forEach(t => {
       const d = new Date(t.date);
-      const dailyRate = (rateMap[t.worker_id] || 0) / getWorkingDays(d.getFullYear(), d.getMonth());
+      const dailyRate = (rateMap[t.worker_id] || 0) / getWorkingDays(d.getFullYear(), d.getMonth(), phSet);
       const hourlyRate = dailyRate / 8;
       const otRates = otMap[t.worker_id];
       const cost = (t.regular_hours > 4 ? dailyRate : (t.regular_hours / 8) * dailyRate)

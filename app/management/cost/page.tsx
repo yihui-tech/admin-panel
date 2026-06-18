@@ -14,18 +14,18 @@ type ProjectCost = {
   mandays: number;
 };
 
-const getWorkingDays = (year: number, month: number): number => {
+const getWorkingDays = (year: number, month: number, phSet: Set<string>): number => {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  let weekdays = 0;
-  let saturdays = 0;
+  let total = 0;
 
   for (let d = 1; d <= daysInMonth; d++) {
     const day = new Date(year, month, d).getDay();
-    if (day >= 1 && day <= 5) weekdays++;
-    if (day === 6) saturdays++;
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    if (day >= 1 && day <= 5) total += phSet.has(dateStr) ? 0 : 1;
+    else if (day === 6) total += phSet.has(dateStr) ? 0 : 0.5;
   }
 
-  return weekdays + saturdays * 0.5;
+  return total;
 };
 
 export default function CostPage() {
@@ -44,7 +44,11 @@ export default function CostPage() {
       setLoading(true);
 
       const [year, month] = selectedMonth.split('-').map(Number);
-      const workingDays = getWorkingDays(year, month - 1);
+
+      const { data: holidays } = await supabase.from('public_holidays').select('date');
+      const phSet = new Set((holidays || []).map((h: { date: string }) => h.date));
+
+      const workingDays = getWorkingDays(year, month - 1, phSet);
 
       let projectQuery = supabase
         .from('projects')
@@ -100,7 +104,7 @@ export default function CostPage() {
 
         const entryDate = new Date(t.date);
         const entryWorkingDays = view === 'alltime'
-          ? getWorkingDays(entryDate.getFullYear(), entryDate.getMonth())
+          ? getWorkingDays(entryDate.getFullYear(), entryDate.getMonth(), phSet)
           : workingDays;
 
         const dailyRate = monthlyRate / entryWorkingDays;
