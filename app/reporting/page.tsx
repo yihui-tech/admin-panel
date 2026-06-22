@@ -114,6 +114,9 @@ export default function ReportingPage() {
         weigh_bridge(id, net_weight, rubbish_weight, foc_weight, material_type_ids, outbound_material_type_ids)
       `)
       .eq('status', 'completed')
+      .gte('trip_date', fromDate)
+      .lte('trip_date', toDate)
+      .limit(5000)
       .then(({ data }) => {
         if (data) setTrips(data as unknown as TripReport[]);
         setLoading(false);
