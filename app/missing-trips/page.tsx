@@ -9,7 +9,7 @@ import { supabase } from '../lib/supabase';
 type BinMovementRaw = {
   id: string;
   bin_id: string;
-  action: string;              // 'dropoff' | 'pickup'
+  action: string;
   movement_date: string;
   movement_time: string | null;
   from_label: string | null;
@@ -17,22 +17,37 @@ type BinMovementRaw = {
   bins: { serial_number: string } | null;
 };
 
+type TripBinRaw = {
+  id: string;
+  bin_id: string;
+  action: string;
+  removed_at: string | null;
+  trips: {
+    trip_date: string | null;
+    completed_at: string | null;
+    customers: { name: string } | null;
+    customer_locations: { name: string; customers: { name: string } | null } | null;
+  } | null;
+  bins: { serial_number: string } | null;
+};
+
 type Gap = {
+  source: 'trip' | 'movement';
   kind: 'missing_pickup' | 'missing_dropoff' | 'inconsistency';
   bin_id: string;
   bin_serial: string;
-  description: string;         // human-readable: "Missing pickup from ABC Corp · Tuas"
-  at_location: string;         // the location the missing trip would be at
-  after_date: string;          // date of the movement that creates the gap (prev)
-  before_date: string;         // date of the next recorded movement (curr)
-  prev_id: string;
-  curr_id: string;
+  description: string;
+  after_date: string;
+  before_date: string;
+  // movement-source only
+  prev_id?: string;
+  curr_id?: string;
+  at_location?: string;
 };
 
 // ── Gap detection ──────────────────────────────────────────────────────────────
 
-function detectGaps(movements: BinMovementRaw[]): Gap[] {
-  // Group by bin
+function detectMovementGaps(movements: BinMovementRaw[]): Gap[] {
   const byBin: Record<string, BinMovementRaw[]> = {};
   for (const m of movements) {
     if (!byBin[m.bin_id]) byBin[m.bin_id] = [];
@@ -42,7 +57,6 @@ function detectGaps(movements: BinMovementRaw[]): Gap[] {
   const gaps: Gap[] = [];
 
   for (const [binId, binMovements] of Object.entries(byBin)) {
-    // Sort chronologically
     const sorted = [...binMovements].sort((a, b) => {
       const ka = a.movement_date + 'T' + (a.movement_time ?? '00:00');
       const kb = b.movement_date + 'T' + (b.movement_time ?? '00:00');
@@ -55,58 +69,78 @@ function detectGaps(movements: BinMovementRaw[]): Gap[] {
       const prev = sorted[i];
       const curr = sorted[i + 1];
 
-      // dropoff → dropoff: bin went to customer A, then customer B without a pickup from A
       if (prev.action === 'dropoff' && curr.action === 'dropoff') {
-        gaps.push({
-          kind: 'missing_pickup',
-          bin_id: binId,
-          bin_serial: serial,
-          description: `Missing pickup from ${prev.to_label}`,
-          at_location: prev.to_label,
-          after_date: prev.movement_date,
-          before_date: curr.movement_date,
-          prev_id: prev.id,
-          curr_id: curr.id,
-        });
+        gaps.push({ source: 'movement', kind: 'missing_pickup', bin_id: binId, bin_serial: serial,
+          description: `Missing pickup from ${prev.to_label}`, at_location: prev.to_label,
+          after_date: prev.movement_date, before_date: curr.movement_date, prev_id: prev.id, curr_id: curr.id });
         continue;
       }
-
-      // pickup → pickup: bin was picked up twice without a delivery in between
       if (prev.action === 'pickup' && curr.action === 'pickup') {
-        gaps.push({
-          kind: 'missing_dropoff',
-          bin_id: binId,
-          bin_serial: serial,
-          description: `Missing delivery between two pickups`,
-          at_location: curr.from_label ?? curr.to_label,
-          after_date: prev.movement_date,
-          before_date: curr.movement_date,
-          prev_id: prev.id,
-          curr_id: curr.id,
-        });
+        gaps.push({ source: 'movement', kind: 'missing_dropoff', bin_id: binId, bin_serial: serial,
+          description: `Missing delivery between two pickups`, at_location: curr.from_label ?? curr.to_label,
+          after_date: prev.movement_date, before_date: curr.movement_date, prev_id: prev.id, curr_id: curr.id });
         continue;
       }
-
-      // dropoff → pickup: check the bin was picked up from where it was delivered
       if (prev.action === 'dropoff' && curr.action === 'pickup') {
-        // from_label on the pickup should match where the bin was dropped off
         const expectedFrom = prev.to_label.trim().toLowerCase();
-        const actualFrom = (curr.from_label ?? '').trim().toLowerCase();
+        const actualFrom   = (curr.from_label ?? '').trim().toLowerCase();
         if (actualFrom && expectedFrom && actualFrom !== expectedFrom) {
-          gaps.push({
-            kind: 'inconsistency',
-            bin_id: binId,
-            bin_serial: serial,
-            description: `Delivered to "${prev.to_label}" but collected from "${curr.from_label}" — missing pickup from ${prev.to_label} and delivery to ${curr.from_label ?? '?'}`,
+          gaps.push({ source: 'movement', kind: 'inconsistency', bin_id: binId, bin_serial: serial,
+            description: `Delivered to "${prev.to_label}" but collected from "${curr.from_label}"`,
             at_location: prev.to_label,
-            after_date: prev.movement_date,
-            before_date: curr.movement_date,
-            prev_id: prev.id,
-            curr_id: curr.id,
-          });
+            after_date: prev.movement_date, before_date: curr.movement_date, prev_id: prev.id, curr_id: curr.id });
         }
       }
-      // pickup → dropoff is always valid (no gap)
+    }
+  }
+
+  return gaps;
+}
+
+function detectTripGaps(tripBins: TripBinRaw[]): Gap[] {
+  const byBin: Record<string, TripBinRaw[]> = {};
+  for (const tb of tripBins) {
+    if (tb.removed_at) continue;
+    if (!byBin[tb.bin_id]) byBin[tb.bin_id] = [];
+    byBin[tb.bin_id].push(tb);
+  }
+
+  const gaps: Gap[] = [];
+
+  for (const [binId, entries] of Object.entries(byBin)) {
+    const sorted = [...entries].sort((a, b) => {
+      const da = a.trips?.trip_date ?? a.trips?.completed_at?.slice(0, 10) ?? '';
+      const db = b.trips?.trip_date ?? b.trips?.completed_at?.slice(0, 10) ?? '';
+      return da.localeCompare(db);
+    });
+
+    const serial = sorted[0].bins?.serial_number ?? binId;
+
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const prev = sorted[i];
+      const curr = sorted[i + 1];
+      const prevDate = prev.trips?.trip_date ?? prev.trips?.completed_at?.slice(0, 10) ?? '';
+      const currDate = curr.trips?.trip_date ?? curr.trips?.completed_at?.slice(0, 10) ?? '';
+
+      const prevCustomer = prev.trips?.customer_locations
+        ? `${prev.trips.customer_locations.customers?.name ?? ''} · ${prev.trips.customer_locations.name}`.trim()
+        : prev.trips?.customers?.name ?? 'unknown customer';
+
+      // treat roundtrip same as pickup — bin ends up at yard
+      const prevEndsAtYard = prev.action === 'pickup' || prev.action === 'roundtrip';
+      const currEndsAtYard = curr.action === 'pickup' || curr.action === 'roundtrip';
+
+      if (prev.action === 'dropoff' && curr.action === 'dropoff') {
+        gaps.push({ source: 'trip', kind: 'missing_pickup', bin_id: binId, bin_serial: serial,
+          description: `Missing pickup from ${prevCustomer}`,
+          after_date: prevDate, before_date: currDate });
+        continue;
+      }
+      if (prevEndsAtYard && currEndsAtYard) {
+        gaps.push({ source: 'trip', kind: 'missing_dropoff', bin_id: binId, bin_serial: serial,
+          description: `Missing delivery between two collections`,
+          after_date: prevDate, before_date: currDate });
+      }
     }
   }
 
@@ -143,16 +177,28 @@ export default function MissingTripsPage() {
   useEffect(() => {
     const run = async () => {
       setLoading(true);
-      const { data } = await supabase
-        .from('bin_movements')
-        .select('id, bin_id, action, movement_date, movement_time, from_label, to_label, bins(serial_number)')
-        .order('movement_date')
-        .order('movement_time');
 
-      if (data) {
-        const raw = data as unknown as BinMovementRaw[];
-        setGaps(detectGaps(raw));
-      }
+      const [movResult, tripResult] = await Promise.all([
+        supabase
+          .from('bin_movements')
+          .select('id, bin_id, action, movement_date, movement_time, from_label, to_label, bins(serial_number)')
+          .order('movement_date')
+          .order('movement_time'),
+        supabase
+          .from('trip_bins')
+          .select('id, bin_id, action, removed_at, trips!inner(trip_date, completed_at, customers(name), customer_locations(name, customers(name))), bins(serial_number)')
+          .eq('trips.status', 'completed'),
+      ]);
+
+      const movGaps = movResult.data
+        ? detectMovementGaps(movResult.data as unknown as BinMovementRaw[])
+        : [];
+      const tripGaps = tripResult.data
+        ? detectTripGaps(tripResult.data as unknown as TripBinRaw[])
+        : [];
+
+      // Trip gaps first (historical), then movement gaps
+      setGaps([...tripGaps, ...movGaps]);
       setLoading(false);
     };
     run();
@@ -177,9 +223,7 @@ export default function MissingTripsPage() {
         <div>
           <h1 className="text-2xl font-bold">Missing Trips</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Gaps detected by analysing the sequence of recorded bin movements.
-            Fix by adding the missing movement in{' '}
-            <button onClick={() => router.push('/bin-movements')} className="text-blue-600 hover:underline">Bin Movements</button>.
+            Gaps detected from trip history and recorded bin movements — consecutive dropoffs or pickups with no matching return trip.
           </p>
         </div>
       </div>
@@ -245,6 +289,9 @@ export default function MissingTripsPage() {
                         >
                           {gap.bin_serial}
                         </button>
+                        <span className="text-xs text-gray-400">
+                          {gap.source === 'trip' ? 'from trip history' : 'from movement log'}
+                        </span>
                       </div>
                       <p className={`text-sm font-medium ${c.text}`}>{gap.description}</p>
                       <p className="text-xs text-gray-500 mt-1">
@@ -253,12 +300,21 @@ export default function MissingTripsPage() {
                       </p>
                     </div>
                   </div>
-                  <button
-                    onClick={() => router.push('/bin-movements')}
-                    className="shrink-0 text-xs font-medium text-blue-600 hover:underline whitespace-nowrap"
-                  >
-                    + Add missing movement
-                  </button>
+                  {gap.source === 'trip' ? (
+                    <button
+                      onClick={() => router.push(`/trips?prefill_bin=${gap.bin_id}&prefill_action=${gap.kind === 'missing_pickup' ? 'pickup' : 'dropoff'}`)}
+                      className="shrink-0 text-xs font-medium text-blue-600 hover:underline whitespace-nowrap"
+                    >
+                      + Enter missing trip
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => router.push('/bin-movements')}
+                      className="shrink-0 text-xs font-medium text-blue-600 hover:underline whitespace-nowrap"
+                    >
+                      + Add missing movement
+                    </button>
+                  )}
                 </div>
               </div>
             );
