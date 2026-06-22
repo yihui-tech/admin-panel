@@ -20,7 +20,6 @@ const tripsLinks = [
 
 const binsLinks = [
   { href: '/bins', label: 'Bins' },
-  { href: '/bin-movements', label: 'Movements' },
   { href: '/missing-trips', label: 'Missing Trips' },
   { href: '/analytics', label: 'Analytics' },
 ];

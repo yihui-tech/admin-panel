@@ -90,8 +90,8 @@ export default function BinsPage() {
   const [editingBin, setEditingBin] = useState<Bin | null>(null);
   const [form, setForm] = useState<BinForm>(emptyForm);
   const [loading, setLoading] = useState(false);
-  const [missingTrip, setMissingTrip] = useState(false);
-  const [missingTripNote, setMissingTripNote] = useState('');
+  const [movementDate, setMovementDate] = useState('');
+  const [movementNote, setMovementNote] = useState('');
   const [locationFilter, setLocationFilter] = useState<'all' | 'customer' | 'yard' | 'unknown'>('all');
   const [typeFilter, setTypeFilter] = useState('');
   const [sizeFilter, setSizeFilter] = useState('');
@@ -149,16 +149,16 @@ export default function BinsPage() {
   const openCreate = () => {
     setForm(emptyForm);
     setEditingBin(null);
-    setMissingTrip(false);
-    setMissingTripNote('');
+    setMovementDate(new Date().toISOString().slice(0, 10));
+    setMovementNote('');
     setShowModal(true);
   };
 
   const openEdit = (bin: Bin) => {
     setForm(binToForm(bin));
     setEditingBin(bin);
-    setMissingTrip(false);
-    setMissingTripNote('');
+    setMovementDate(new Date().toISOString().slice(0, 10));
+    setMovementNote('');
     setShowModal(true);
   };
 
@@ -175,6 +175,7 @@ export default function BinsPage() {
     e.preventDefault();
     setLoading(true);
     const payload = formToPayload(form);
+
     let error;
     let savedBinId = editingBin?.id;
     if (editingBin) {
@@ -184,35 +185,55 @@ export default function BinsPage() {
       error = insertError;
       savedBinId = data?.id;
     }
-    if (!error && editingBin && missingTrip && savedBinId) {
-      const fromLabel = (() => {
-        if (editingBin.customer_locations) return `${editingBin.customer_locations.customers?.name ?? ''} · ${editingBin.customer_locations.name}`.trim();
-        if (editingBin.customers) return editingBin.customers.name;
-        if (editingBin.locations) return editingBin.locations.name;
-        return 'Unknown';
-      })();
-      const toLabel = (() => {
-        if (form.locationType === 'customer') {
-          const site = customerLocationOptions.find(l => String(l.id) === form.customer_location_id);
-          const cust = customerOptions.find(c => String(c.customer_id) === form.customer_id);
-          if (site && cust) return `${cust.name} · ${site.name}`;
-          if (cust) return cust.name;
-          return 'Customer site';
+
+    if (!error && editingBin && savedBinId) {
+      // Detect whether location actually changed on an already-located bin
+      const binHadLocation = !!(editingBin.customer_location_id || editingBin.customer_id || editingBin.location_id);
+      const oldLocType = editingBin.customer_location_id || editingBin.customer_id ? 'customer' : editingBin.location_id ? 'location' : '';
+      const newCustLocId = payload.customer_location_id ?? null;
+      const newLocId = payload.location_id ?? null;
+      const locationChanged = binHadLocation && (
+        form.locationType !== oldLocType ||
+        newCustLocId !== (editingBin.customer_location_id ?? null) ||
+        newLocId !== (editingBin.location_id ?? null)
+      );
+
+      if (locationChanged) {
+        const fromLabel = (() => {
+          if (editingBin.customer_locations) return `${editingBin.customer_locations.customers?.name ?? ''} · ${editingBin.customer_locations.name}`.trim();
+          if (editingBin.customers) return editingBin.customers.name;
+          if (editingBin.locations) return editingBin.locations.name;
+          return 'Unknown';
+        })();
+        const toLabel = (() => {
+          if (form.locationType === 'customer') {
+            const site = customerLocationOptions.find(l => String(l.id) === form.customer_location_id);
+            const cust = customerOptions.find(c => String(c.customer_id) === form.customer_id);
+            if (site && cust) return `${cust.name} · ${site.name}`;
+            if (cust) return cust.name;
+            return 'Customer site';
+          }
+          if (form.locationType === 'location') {
+            return locationOptions.find(l => String(l.id) === form.location_id)?.name ?? 'Yard';
+          }
+          return 'Unknown';
+        })();
+        const action = form.locationType === 'customer' ? 'dropoff' : form.locationType === 'location' ? 'pickup' : null;
+        if (action) {
+          await supabase.from('bin_movements').insert({
+            bin_id: savedBinId,
+            action,
+            movement_date: movementDate || new Date().toISOString().slice(0, 10),
+            from_label: fromLabel,
+            to_label: toLabel,
+            customer_location_id: newCustLocId,
+            location_id: newLocId,
+            note: movementNote || null,
+          });
         }
-        if (form.locationType === 'location') {
-          return locationOptions.find(l => String(l.id) === form.location_id)?.name ?? 'Yard';
-        }
-        return 'Unknown';
-      })();
-      const missingAction = form.locationType === 'customer' ? 'dropoff' : form.locationType === 'location' ? 'pickup' : null;
-      await supabase.from('bin_location_overrides').insert({
-        bin_id: savedBinId,
-        from_label: fromLabel,
-        to_label: toLabel,
-        missing_action: missingAction,
-        note: missingTripNote || null,
-      });
+      }
     }
+
     setLoading(false);
     if (!error) {
       setShowModal(false);
@@ -537,28 +558,43 @@ export default function BinsPage() {
                 </div>
               )}
 
-              {editingBin && (
-                <div className={`rounded-lg p-3 border ${missingTrip ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'}`}>
-                  <label className="flex items-start gap-2 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={missingTrip}
-                      onChange={e => setMissingTrip(e.target.checked)}
-                      className="mt-0.5 accent-amber-500"
-                    />
-                    <span className="text-sm font-medium text-amber-800">Missing prior trip — location manually corrected</span>
-                  </label>
-                  {missingTrip && (
-                    <input
-                      type="text"
-                      value={missingTripNote}
-                      onChange={e => setMissingTripNote(e.target.value)}
-                      placeholder="Optional note (e.g. bin found at Jurong site, dropoff trip missing)"
-                      className="mt-2 w-full border border-amber-300 rounded px-3 py-1.5 text-sm bg-white"
-                    />
-                  )}
-                </div>
-              )}
+              {editingBin && (() => {
+                const binHadLocation = !!(editingBin.customer_location_id || editingBin.customer_id || editingBin.location_id);
+                const oldLocType = editingBin.customer_location_id || editingBin.customer_id ? 'customer' : editingBin.location_id ? 'location' : '';
+                const newCustLocId = form.locationType === 'customer' && form.customer_location_id ? parseInt(form.customer_location_id, 10) : null;
+                const newLocId = form.locationType === 'location' && form.location_id ? parseInt(form.location_id, 10) : null;
+                const locationWillChange = binHadLocation && (
+                  form.locationType !== oldLocType ||
+                  newCustLocId !== (editingBin.customer_location_id ?? null) ||
+                  newLocId !== (editingBin.location_id ?? null)
+                );
+                if (!locationWillChange) return null;
+                return (
+                  <div className="rounded-lg p-3 border bg-teal-50 border-teal-200">
+                    <p className="text-sm font-medium text-teal-800 mb-2">
+                      Location change detected — this will be recorded as a missing trip
+                    </p>
+                    <div className="space-y-2">
+                      <div>
+                        <label className="block text-xs font-medium text-teal-700 mb-1">Date of movement</label>
+                        <input
+                          type="date"
+                          value={movementDate}
+                          onChange={e => setMovementDate(e.target.value)}
+                          className="w-full border border-teal-300 rounded px-3 py-1.5 text-sm bg-white"
+                        />
+                      </div>
+                      <input
+                        type="text"
+                        value={movementNote}
+                        onChange={e => setMovementNote(e.target.value)}
+                        placeholder="Optional note"
+                        className="w-full border border-teal-300 rounded px-3 py-1.5 text-sm bg-white"
+                      />
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="flex gap-3 pt-2">
                 <button type="submit" disabled={loading} className="bg-blue-600 text-white px-6 py-2 rounded font-medium hover:bg-blue-700 disabled:opacity-50">

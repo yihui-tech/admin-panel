@@ -45,9 +45,22 @@ type OverrideEntry = {
   sortDate: string;
 };
 
+type MovementEntry = {
+  id: string;
+  action: string;
+  movement_date: string;
+  movement_time: string | null;
+  from_label: string | null;
+  to_label: string;
+  note: string | null;
+  created_at: string;
+  sortDate: string;
+};
+
 type TimelineItem =
   | ({ kind: 'trip' } & HistoryEntry)
-  | ({ kind: 'override' } & OverrideEntry);
+  | ({ kind: 'override' } & OverrideEntry)
+  | ({ kind: 'movement' } & MovementEntry);
 
 type DriverMap = Record<string, string>;
 
@@ -70,6 +83,7 @@ export default function BinHistoryPage() {
 
   const [bin, setBin] = useState<Bin | null>(null);
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
+  const [gapCount, setGapCount] = useState(0);
   const [drivers, setDrivers] = useState<DriverMap>({});
   const [loading, setLoading] = useState(true);
   const [newestFirst, setNewestFirst] = useState(true);
@@ -130,7 +144,54 @@ export default function BinHistoryPage() {
         });
       }
 
-      const merged = [...tripItems, ...overrideItems];
+      // Free-form movements recorded via /bin-movements
+      let movementItems: TimelineItem[] = [];
+      const movementsResult = await supabase
+        .from('bin_movements')
+        .select('id, action, movement_date, movement_time, from_label, to_label, note, created_at')
+        .eq('bin_id', binId);
+      if (!movementsResult.error && movementsResult.data) {
+        movementItems = movementsResult.data.map(m => {
+          const raw = m as unknown as { movement_date: string; movement_time: string | null; from_label: string | null; to_label: string };
+          return {
+            kind: 'movement' as const,
+            id: m.id,
+            action: m.action,
+            movement_date: raw.movement_date,
+            movement_time: raw.movement_time ?? null,
+            from_label: raw.from_label ?? null,
+            to_label: raw.to_label,
+            note: m.note,
+            created_at: m.created_at,
+            sortDate: raw.movement_date,
+          };
+        });
+      }
+
+      // Detect gaps between consecutive bin_movements for this bin
+      const sortedMoves = [...movementItems]
+        .filter((m): m is { kind: 'movement' } & MovementEntry => m.kind === 'movement')
+        .sort((a, b) => {
+          const ka = a.movement_date + 'T' + (a.movement_time ?? '00:00');
+          const kb = b.movement_date + 'T' + (b.movement_time ?? '00:00');
+          return ka.localeCompare(kb);
+        });
+      let gaps = 0;
+      for (let i = 0; i < sortedMoves.length - 1; i++) {
+        const prev = sortedMoves[i];
+        const curr = sortedMoves[i + 1];
+        if ((prev.action === 'dropoff' && curr.action === 'dropoff') ||
+            (prev.action === 'pickup'  && curr.action === 'pickup')) {
+          gaps++;
+        } else if (prev.action === 'dropoff' && curr.action === 'pickup') {
+          const expectedFrom = prev.to_label.trim().toLowerCase();
+          const actualFrom = (curr.from_label ?? '').trim().toLowerCase();
+          if (actualFrom && expectedFrom && actualFrom !== expectedFrom) gaps++;
+        }
+      }
+      setGapCount(gaps);
+
+      const merged = [...tripItems, ...overrideItems, ...movementItems];
       merged.sort((a, b) => b.sortDate.localeCompare(a.sortDate));
       setTimeline(merged);
 
@@ -218,6 +279,21 @@ export default function BinHistoryPage() {
         </div>
       </div>
 
+      {/* Gap warning banner */}
+      {gapCount > 0 && (
+        <div className="mb-4 flex items-center justify-between bg-orange-50 border border-orange-200 rounded-lg px-4 py-3">
+          <p className="text-sm text-orange-800 font-medium">
+            ⚠ {gapCount} gap{gapCount > 1 ? 's' : ''} detected in recorded movements
+          </p>
+          <button
+            onClick={() => router.push('/missing-trips')}
+            className="text-xs font-medium text-orange-700 underline hover:text-orange-900"
+          >
+            View missing trips →
+          </button>
+        </div>
+      )}
+
       {/* Movement history */}
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-base font-semibold text-gray-700">
@@ -243,6 +319,34 @@ export default function BinHistoryPage() {
           <div className="absolute left-3 top-2 bottom-2 w-px bg-gray-200" />
           <div className="space-y-4">
             {displayed.map(item => {
+              if (item.kind === 'movement') {
+                const isDropoff = item.action === 'dropoff';
+                return (
+                  <div key={item.id} className="flex gap-4">
+                    <div className="mt-1 w-6 h-6 rounded-full flex items-center justify-center shrink-0 z-10 text-xs font-bold bg-teal-100 text-teal-700">
+                      {isDropoff ? '↓' : '↑'}
+                    </div>
+                    <div className="flex-1 border border-teal-200 rounded-lg px-3 py-2.5 text-sm bg-teal-50">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-teal-100 text-teal-800">
+                          {isDropoff ? 'Delivered to customer' : 'Collected from customer'}
+                        </span>
+                        <span className="text-xs text-gray-400">
+                          {formatDate(item.movement_date)}
+                          {item.movement_time && <span> {item.movement_time.slice(0, 5)}</span>}
+                        </span>
+                      </div>
+                      {(item.from_label || item.to_label) && (
+                        <p className="text-teal-800 text-xs mt-1 font-medium">
+                          {item.from_label ?? '—'} → {item.to_label}
+                        </p>
+                      )}
+                      {item.note && <p className="text-gray-600 text-xs mt-0.5">{item.note}</p>}
+                    </div>
+                  </div>
+                );
+              }
+
               if (item.kind === 'override') {
                 return (
                   <div key={item.id} className="flex gap-4">
