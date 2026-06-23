@@ -300,21 +300,12 @@ export default function MissingTripsPage() {
                       </p>
                     </div>
                   </div>
-                  {gap.source === 'trip' ? (
-                    <button
-                      onClick={() => router.push(`/trips?prefill_bin=${gap.bin_id}&prefill_action=${gap.kind === 'missing_pickup' ? 'pickup' : 'dropoff'}`)}
-                      className="shrink-0 text-xs font-medium text-blue-600 hover:underline whitespace-nowrap"
-                    >
-                      + Enter missing trip
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => router.push('/bin-movements')}
-                      className="shrink-0 text-xs font-medium text-blue-600 hover:underline whitespace-nowrap"
-                    >
-                      + Add missing movement
-                    </button>
-                  )}
+                  <button
+                    onClick={() => router.push(`/trips/new?prefill_bin=${gap.bin_id}&prefill_action=${gap.kind === 'missing_pickup' ? 'pickup' : 'dropoff'}`)}
+                    className="shrink-0 text-xs font-medium text-blue-600 hover:underline whitespace-nowrap"
+                  >
+                    + Enter missing trip
+                  </button>
                 </div>
               </div>
             );

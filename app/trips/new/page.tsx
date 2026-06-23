@@ -145,6 +145,7 @@ function NewTripPage() {
   const [showBinDropdown, setShowBinDropdown] = useState(false);
 
   const [tripDate, setTripDate] = useState(todayDate);
+  const [tripTime, setTripTime] = useState('');
   const [loadForm, setLoadForm] = useState(() => ({ ...emptyLoadForm, gross_time: nowTime(), tare_time: nowTime() }));
   const [submitting, setSubmitting] = useState(false);
 
@@ -388,6 +389,7 @@ function NewTripPage() {
         remarks: tripRemarks || null,
         trip_type: tripType,
         trip_date: tripDate || null,
+        trip_time: tripTime || null,
         status,
         completed_at: status === 'completed' ? new Date().toISOString() : null,
       })
@@ -428,6 +430,14 @@ function NewTripPage() {
             customer_id: custLocId ? null : custId,
             location_id: null,
           }).in('id', dropoffBins.map(b => b.bin_id));
+        }
+
+        // Clear gap markers for any bin whose formal trip is now recorded
+        for (const b of pendingBins) {
+          await supabase.from('bin_movements')
+            .delete()
+            .eq('bin_id', b.bin_id)
+            .eq('action', b.action);
         }
       }
     }
@@ -507,9 +517,15 @@ function NewTripPage() {
             <h2 className="text-sm font-bold text-gray-600 uppercase tracking-wider mb-4">Trip Details</h2>
             <div className="space-y-4">
 
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Trip Date</label>
-                <input type="date" value={tripDate} onChange={e => setTripDate(e.target.value)} className={inputCls} />
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Trip Date</label>
+                  <input type="date" value={tripDate} onChange={e => setTripDate(e.target.value)} className={inputCls} />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Time <span className="text-gray-400 font-normal">(optional)</span></label>
+                  <input type="time" value={tripTime} onChange={e => setTripTime(e.target.value)} className={inputCls} />
+                </div>
               </div>
 
               {!isDropoff && (

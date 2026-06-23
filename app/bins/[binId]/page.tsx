@@ -28,6 +28,7 @@ type HistoryEntry = {
     vehicle_number: string | null;
     driver_id: string | null;
     trip_date: string | null;
+    trip_time: string | null;
     completed_at: string | null;
     customers: { name: string } | null;
     customer_locations: { name: string; customers: { name: string } | null } | null;
@@ -100,7 +101,7 @@ export default function BinHistoryPage() {
         supabase.from('drivers').select('employee_id, name').order('name'),
         supabase
           .from('trip_bins')
-          .select('id, action, removed_at, trips!inner(id, vehicle_number, driver_id, trip_date, completed_at, customers(name), customer_locations(name, customers(name)), locations!dropoff_id(name))')
+          .select('id, action, removed_at, trips!inner(id, vehicle_number, driver_id, trip_date, trip_time, completed_at, customers(name), customer_locations(name, customers(name)), locations!dropoff_id(name))')
           .eq('bin_id', binId)
           .eq('trips.status', 'completed'),
       ]);
@@ -115,10 +116,12 @@ export default function BinHistoryPage() {
 
       const tripItems: TimelineItem[] = (historyResult.data ?? []).map(e => {
         const raw = e as unknown as Omit<HistoryEntry, 'sortDate'>;
+        const date = raw.trips?.trip_date ?? raw.trips?.completed_at?.slice(0, 10) ?? '';
+        const time = raw.trips?.trip_time ?? raw.trips?.completed_at?.slice(11, 16) ?? '00:00';
         return {
           kind: 'trip' as const,
           ...raw,
-          sortDate: raw.trips?.trip_date ?? raw.trips?.completed_at?.slice(0, 10) ?? '',
+          sortDate: date ? `${date}T${time}` : '',
         };
       });
 
@@ -139,7 +142,7 @@ export default function BinHistoryPage() {
             missing_action: raw.missing_action ?? null,
             note: o.note,
             created_at: o.created_at,
-            sortDate: o.created_at.slice(0, 10),
+            sortDate: o.created_at.slice(0, 16).replace(' ', 'T'),
           };
         });
       }
@@ -163,7 +166,7 @@ export default function BinHistoryPage() {
             to_label: raw.to_label,
             note: m.note,
             created_at: m.created_at,
-            sortDate: raw.movement_date,
+            sortDate: `${raw.movement_date}T${raw.movement_time ?? '00:00'}`,
           };
         });
       }
@@ -365,7 +368,7 @@ export default function BinHistoryPage() {
                       {item.note && <p className="text-gray-600 text-xs mt-0.5">{item.note}</p>}
                       {item.missing_action && (
                         <button
-                          onClick={() => router.push(`/trips?prefill_bin=${binId}&prefill_action=${item.missing_action}`)}
+                          onClick={() => router.push(`/trips/new?prefill_bin=${binId}&prefill_action=${item.missing_action}`)}
                           className="mt-2 text-xs font-medium text-amber-800 underline hover:text-amber-900"
                         >
                           + Enter missing trip
@@ -377,6 +380,7 @@ export default function BinHistoryPage() {
               }
 
               const date = item.trips?.trip_date ?? item.trips?.completed_at?.slice(0, 10) ?? null;
+              const time = item.trips?.trip_time?.slice(0, 5) ?? null;
               const isDropoff = item.action === 'dropoff';
               const isPickup  = item.action === 'pickup';
               const isRemoved = !!item.removed_at;
@@ -396,7 +400,9 @@ export default function BinHistoryPage() {
                         <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${tagColor}`}>{actionLabel}</span>
                         {isRemoved && <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-red-50 text-red-500 line-through">Removed</span>}
                       </div>
-                      <span className="text-xs text-gray-400">{formatDate(date)}</span>
+                      <span className="text-xs text-gray-400">
+                        {formatDate(date)}{time && <span> {time}</span>}
+                      </span>
                     </div>
                     <div className="text-gray-600 space-y-0.5 mt-1.5">
                       {(item.trips?.customer_locations || item.trips?.customers) && (

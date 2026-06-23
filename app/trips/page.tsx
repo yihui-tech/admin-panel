@@ -267,6 +267,11 @@ function TripsPage() {
           location_id: null,
         }).eq('id', tb.bin_id);
       }
+      // Clear gap marker now that a formal trip covers this movement
+      await supabase.from('bin_movements')
+        .delete()
+        .eq('bin_id', tb.bin_id)
+        .eq('action', tb.action);
     }
     fetchTrips();
   };
