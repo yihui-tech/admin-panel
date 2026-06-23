@@ -15,8 +15,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="bg-gray-50 min-h-screen">
-        <Nav />
-        {children}
+        <div className="flex min-h-screen">
+          <Nav />
+          <main className="flex-1 min-w-0">
+            {children}
+          </main>
+        </div>
       </body>
     </html>
   );

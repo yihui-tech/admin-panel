@@ -4,37 +4,79 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { FolderKanban, Truck, Package, ShieldCheck, BarChart2 } from 'lucide-react';
+import { FolderKanban, Truck, Package, ShieldCheck, BarChart2, ChevronDown } from 'lucide-react';
 import { createBrowserClient } from '@supabase/ssr';
 
-const projectsLinks = [
-  { href: '/projects', label: 'Projects' },
-  { href: '/assignments', label: 'Assignments' },
-  { href: '/timesheets', label: 'Timesheets' },
-];
-
-const tripsLinks = [
-  { href: '/trips', label: 'Trips' },
-  { href: '/reporting', label: 'Reporting' },
-];
-
-const binsLinks = [
-  { href: '/bins', label: 'Bins' },
-  { href: '/missing-trips', label: 'Missing Trips' },
-  { href: '/analytics', label: 'Analytics' },
-];
-
-const reportsLinks = [
-  { href: '/management/cost', label: 'Project' },
-  { href: '/management/driver-location', label: 'Driver Checkout' },
-  { href: '/management/vehicle-costs', label: 'Vehicle Costs' },
-  { href: '/management/bins-aging', label: 'Bin Aging' },
+const sections = [
+  {
+    key: 'projects',
+    label: 'Projects',
+    icon: FolderKanban,
+    links: [
+      { href: '/projects', label: 'Projects' },
+      { href: '/assignments', label: 'Assignments' },
+      { href: '/timesheets', label: 'Timesheets' },
+    ],
+  },
+  {
+    key: 'trips',
+    label: 'Trips',
+    icon: Truck,
+    links: [
+      { href: '/trips', label: 'Trips' },
+      { href: '/reporting', label: 'Reporting' },
+    ],
+  },
+  {
+    key: 'bins',
+    label: 'Bins',
+    icon: Package,
+    links: [
+      { href: '/bins', label: 'Bins' },
+      { href: '/missing-trips', label: 'Missing Trips' },
+      { href: '/analytics', label: 'Analytics' },
+    ],
+  },
+  {
+    key: 'management',
+    label: 'Reports',
+    icon: BarChart2,
+    links: [
+      { href: '/management/cost', label: 'Project' },
+      { href: '/management/driver-location', label: 'Driver Checkout' },
+      { href: '/management/vehicle-costs', label: 'Vehicle Costs' },
+      { href: '/management/bins-aging', label: 'Bin Aging' },
+    ],
+  },
+  {
+    key: 'admin',
+    label: 'Admin',
+    icon: ShieldCheck,
+    links: [
+      { href: '/staff', label: 'Staff' },
+      { href: '/customers', label: 'Customers' },
+    ],
+  },
 ];
 
 export default function Nav() {
   const pathname = usePathname();
   const router = useRouter();
   const [modules, setModules] = useState<Set<string>>(new Set());
+
+  const getDefaultOpen = () => {
+    const open = new Set<string>();
+    for (const s of sections) {
+      if (s.links.some(l => pathname.startsWith(l.href))) open.add(s.key);
+    }
+    return open;
+  };
+
+  const [openSections, setOpenSections] = useState<Set<string>>(getDefaultOpen);
+
+  useEffect(() => {
+    setOpenSections(getDefaultOpen());
+  }, [pathname]);
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -84,82 +126,73 @@ export default function Nav() {
     router.refresh();
   };
 
-  const navLink = (href: string, label: string) => (
-    <Link
-      key={href}
-      href={href}
-      className={`text-sm font-medium px-1 py-0.5 rounded transition-colors ${
-        pathname === href
-          ? 'text-blue-600 border-b-2 border-blue-600 pb-0.5 rounded-none'
-          : 'text-gray-500 hover:text-gray-800'
-      }`}
-    >
-      {label}
-    </Link>
-  );
+  const toggleSection = (key: string) => {
+    setOpenSections(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const visibleSections = sections.filter(s => modules.has(s.key));
 
   return (
-    <nav className="bg-white border-b px-8 py-3 flex items-center gap-5">
-      <Link href="/" className="mr-2 flex-shrink-0">
-        <Image src="/logo.jpg" alt="Yi Hui Tech" width={36} height={36} className="rounded" />
-      </Link>
+    <nav className="w-52 shrink-0 bg-white border-r flex flex-col h-screen sticky top-0">
+      <div className="px-4 py-4 border-b">
+        <Link href="/">
+          <Image src="/logo.jpg" alt="Yi Hui Tech" width={36} height={36} className="rounded" />
+        </Link>
+      </div>
 
-      {modules.has('projects') && (
-        <>
-          <div className="flex items-center gap-1.5">
-            <FolderKanban size={13} className="text-gray-400" />
-            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Projects</span>
-          </div>
-          {projectsLinks.map(l => navLink(l.href, l.label))}
-        </>
-      )}
+      <div className="flex-1 overflow-y-auto py-2">
+        {visibleSections.map((section) => {
+          const Icon = section.icon;
+          const isOpen = openSections.has(section.key);
+          return (
+            <div key={section.key}>
+              <button
+                onClick={() => toggleSection(section.key)}
+                className="w-full flex items-center justify-between px-4 py-2 text-left hover:bg-gray-50 transition-colors group"
+              >
+                <div className="flex items-center gap-2">
+                  <Icon size={14} className="text-gray-400 group-hover:text-gray-600" />
+                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide group-hover:text-gray-700">
+                    {section.label}
+                  </span>
+                </div>
+                <ChevronDown
+                  size={13}
+                  className={`text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+                />
+              </button>
 
-      {modules.has('trips') && (
-        <>
-          <div className="w-px h-5 bg-gray-200 mx-1" />
-          <div className="flex items-center gap-1.5">
-            <Truck size={13} className="text-gray-400" />
-            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Trips</span>
-          </div>
-          {tripsLinks.map(l => navLink(l.href, l.label))}
-        </>
-      )}
+              {isOpen && (
+                <div className="pb-1">
+                  {section.links.map(({ href, label }) => {
+                    const active = pathname === href || (href !== '/' && pathname.startsWith(href));
+                    return (
+                      <Link
+                        key={href}
+                        href={href}
+                        className={`flex items-center pl-9 pr-4 py-1.5 text-sm transition-colors ${
+                          active
+                            ? 'text-blue-600 bg-blue-50 font-medium border-r-2 border-blue-600'
+                            : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'
+                        }`}
+                      >
+                        {label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
 
-      {modules.has('bins') && (
-        <>
-          <div className="w-px h-5 bg-gray-200 mx-1" />
-          <div className="flex items-center gap-1.5">
-            <Package size={13} className="text-gray-400" />
-            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Bins</span>
-          </div>
-          {binsLinks.map(l => navLink(l.href, l.label))}
-        </>
-      )}
-
-      {modules.has('management') && (
-        <>
-          <div className="w-px h-5 bg-gray-200 mx-1" />
-          <div className="flex items-center gap-1.5">
-            <BarChart2 size={13} className="text-gray-400" />
-            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Reports</span>
-          </div>
-          {reportsLinks.map(l => navLink(l.href, l.label))}
-        </>
-      )}
-
-      {modules.has('admin') && (
-        <>
-          <div className="w-px h-5 bg-gray-200 mx-1" />
-          <div className="flex items-center gap-1.5">
-            <ShieldCheck size={13} className="text-gray-400" />
-            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Admin</span>
-          </div>
-          {navLink('/staff', 'Staff')}
-          {navLink('/customers', 'Customers')}
-        </>
-      )}
-
-      <div className="ml-auto">
+      <div className="px-4 py-4 border-t">
         <button
           onClick={handleSignOut}
           className="text-sm text-gray-400 hover:text-gray-700 font-medium transition-colors"
