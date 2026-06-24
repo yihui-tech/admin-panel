@@ -276,21 +276,11 @@ export default function AssignmentsPage() {
     a.mode === 'full_day' ? a.full_day.project_id : a.morning.project_id || a.afternoon.project_id
   ).length;
 
-  // Projects with at least one worker assigned today (for notes section)
-  const assignedProjectIds = new Set<string>();
-  for (const a of Object.values(assignments)) {
-    if (a.mode === 'full_day' && a.full_day.project_id) assignedProjectIds.add(a.full_day.project_id);
-    if (a.mode === 'split') {
-      if (a.morning.project_id) assignedProjectIds.add(a.morning.project_id);
-      if (a.afternoon.project_id) assignedProjectIds.add(a.afternoon.project_id);
-    }
-  }
-  // Also include projects that already have saved notes (so clearing is possible)
-  for (const pid of Object.keys(notes)) assignedProjectIds.add(pid);
-  const assignedProjects = projects.filter(p => assignedProjectIds.has(p.id));
+  // Active projects for notes section — always visible so notes can be entered before/after assigning workers
+  const activeProjects = projects.filter(p => p.status === 'active');
 
   return (
-    <main className="max-w-5xl mx-auto p-8 bg-white text-gray-900 min-h-screen">
+    <main className="max-w-5xl mx-auto px-4 md:px-8 py-4 md:py-8 bg-white text-gray-900 min-h-screen">
       <h1 className="text-2xl font-bold mb-6">Daily Assignments</h1>
 
       <div className="flex items-center gap-4 mb-6">
@@ -408,11 +398,11 @@ export default function AssignmentsPage() {
         </table>
       </div>
 
-      {assignedProjects.length > 0 && (
+      {activeProjects.length > 0 && (
         <div className="mb-6">
           <h2 className="text-base font-semibold mb-3">Project Notes</h2>
           <div className="space-y-4">
-            {assignedProjects.map(p => (
+            {activeProjects.map(p => (
               <div key={p.id}>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   {p.name}{p.location ? ` — ${p.location}` : ''}
