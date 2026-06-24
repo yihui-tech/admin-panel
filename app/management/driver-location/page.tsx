@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
-import { AlertTriangle, CheckCircle, WifiOff, MapPin, Car } from 'lucide-react';
+import { AlertTriangle, CheckCircle, WifiOff, MapPin, Car, Download } from 'lucide-react';
 
 type DriverRow = {
   worker_id: string;
@@ -85,6 +85,53 @@ export default function DriverLocationPage() {
     return c;
   }, [rows]);
 
+  function exportCsv() {
+    const headers = ['Driver', 'Date', 'Vehicle', 'Clock-out', 'OT Hours', 'Trip Start', 'Trip End', 'Start Location', 'End Location', 'Status'];
+
+    // Group by driver, sort within each group by work_date
+    const byDriver = new Map<string, DriverRow[]>();
+    for (const r of rows) {
+      if (!byDriver.has(r.employee_name)) byDriver.set(r.employee_name, []);
+      byDriver.get(r.employee_name)!.push(r);
+    }
+    const sorted = [...byDriver.entries()].sort(([a], [b]) => a.localeCompare(b));
+    const allRows: DriverRow[] = sorted.flatMap(([, driverRows]) =>
+      [...driverRows].sort((a, b) => a.work_date.localeCompare(b.work_date))
+    );
+
+    const formatTime = (ts: string | null, tz = false) => {
+      if (!ts) return '';
+      return new Date(ts).toLocaleTimeString('en-SG', {
+        hour: '2-digit', minute: '2-digit', hour12: false, ...(tz ? { timeZone: 'Asia/Singapore' } : {}),
+      });
+    };
+
+    const csvRows = allRows.map(r => {
+      const status = getStatus(r);
+      return [
+        r.employee_name,
+        new Date(r.work_date).toLocaleDateString('en-SG', { day: '2-digit', month: 'short', year: 'numeric' }),
+        r.vehicle_plate ?? '',
+        r.adj_time_out?.slice(0, 5) ?? '',
+        r.ot_hours ?? '',
+        formatTime(r.trip_start_ts, true),
+        formatTime(r.trip_end_ts, true),
+        r.trip_start_location ?? '',
+        r.trip_end_location ?? '',
+        STATUS_LABEL[status].label,
+      ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
+    });
+
+    const csv = [headers.join(','), ...csvRows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `driver-checkout-${month}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <main className="bg-white text-gray-900 min-h-screen p-8">
       <div className="max-w-6xl mx-auto">
@@ -97,12 +144,22 @@ export default function DriverLocationPage() {
               Last CarTrack trip per driver relative to their adjusted clock-out time
             </p>
           </div>
-          <input
-            type="month"
-            value={month}
-            onChange={e => setMonth(e.target.value)}
-            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm"
-          />
+          <div className="flex items-center gap-2">
+            {rows.length > 0 && (
+              <button
+                onClick={exportCsv}
+                className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 border border-gray-300 rounded-md hover:bg-gray-50 text-gray-700"
+              >
+                <Download size={14} /> Export CSV
+              </button>
+            )}
+            <input
+              type="month"
+              value={month}
+              onChange={e => setMonth(e.target.value)}
+              className="border border-gray-300 rounded-md px-3 py-1.5 text-sm"
+            />
+          </div>
         </div>
 
         {loading && <p className="text-sm text-gray-400">Loading...</p>}
