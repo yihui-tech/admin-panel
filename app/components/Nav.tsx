@@ -221,7 +221,7 @@ export default function Nav() {
           <Menu size={22} />
         </button>
         <Link href="/">
-          <Image src="/logo.png" alt="Yi Hui Tech" width={22} height={22} className="rounded" />
+          <Image src="/logo.png" alt="Yi Hui Tech" width={160} height={40} style={{ width: 'auto', height: '40px' }} className="rounded" />
         </Link>
       </header>
 
