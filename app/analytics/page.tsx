@@ -125,7 +125,7 @@ export default function AnalyticsPage() {
   );
 
   return (
-    <main className="max-w-5xl mx-auto p-8 bg-white text-gray-900 min-h-screen">
+    <main className="max-w-5xl mx-auto px-4 md:px-8 py-4 md:py-8 bg-white text-gray-900 min-h-screen">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Bin Analytics</h1>
       </div>
@@ -171,7 +171,7 @@ export default function AnalyticsPage() {
       ) : rows.length === 0 ? (
         <p className="text-sm text-gray-400 py-8 text-center">No customer sites configured yet.</p>
       ) : (
-        <div className="bg-white border rounded-lg overflow-hidden">
+        <div className="bg-white border rounded-lg overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
@@ -326,7 +326,7 @@ export default function AnalyticsPage() {
             <p className="text-xs text-gray-400 mb-4">
               Bins with status Rented. Location and tracking continue normally after expiry — this is for visibility only. Click a row to view bin history.
             </p>
-            <div className="bg-white border rounded-lg overflow-hidden">
+            <div className="bg-white border rounded-lg overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b">
                   <tr>

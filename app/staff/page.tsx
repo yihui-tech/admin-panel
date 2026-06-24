@@ -151,13 +151,13 @@ export default function StaffPage() {
       </div>
 
       {/* Create user form */}
-      <form onSubmit={handleCreate} className="flex gap-2 mb-2">
+      <form onSubmit={handleCreate} className="flex flex-wrap gap-2 mb-2">
         <input
           type="email"
           placeholder="Email"
           value={newEmail}
           onChange={e => setNewEmail(e.target.value)}
-          className="flex-1 border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="flex-1 min-w-48 border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           required
         />
         <input
@@ -165,7 +165,7 @@ export default function StaffPage() {
           placeholder="Password"
           value={newPassword}
           onChange={e => setNewPassword(e.target.value)}
-          className="w-40 border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full sm:w-40 border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           required
         />
         <button
@@ -179,7 +179,7 @@ export default function StaffPage() {
       {createMessage && (
         <p className={`text-sm mb-4 ${createMessage.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
           {createMessage.text}
-          {createMessage.type === 'success' && ' They will appear here after their first login.'}
+          {createMessage.type === 'success' && ' Grant module access using the pills below.'}
         </p>
       )}
 
@@ -194,7 +194,7 @@ export default function StaffPage() {
               key={p.user_id}
               className="border-2 border-gray-200 rounded-xl px-4 py-3 bg-white"
             >
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="font-semibold text-gray-900 text-sm truncate">{p.email}</span>

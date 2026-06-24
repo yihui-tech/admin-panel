@@ -304,7 +304,7 @@ export default function BinsPage() {
 
 
   return (
-    <main className="max-w-4xl mx-auto p-8 bg-white text-gray-900 min-h-screen">
+    <main className="max-w-4xl mx-auto px-4 md:px-8 py-4 md:py-8 bg-white text-gray-900 min-h-screen">
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold">Bins</h1>
         <button onClick={openCreate} className="bg-blue-600 text-white px-4 py-2 rounded font-medium hover:bg-blue-700">
@@ -359,7 +359,7 @@ export default function BinsPage() {
         </select>
       </div>
 
-      <div className="bg-white border rounded-lg overflow-hidden">
+      <div className="bg-white border rounded-lg overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b">
             <tr>
@@ -456,7 +456,7 @@ export default function BinsPage() {
       {/* Create / Edit modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
             <h2 className="text-lg font-semibold mb-4">{editingBin ? 'Edit Bin' : 'New Bin'}</h2>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>

@@ -209,7 +209,7 @@ export default function BinHistoryPage() {
 
   if (loading) {
     return (
-      <main className="max-w-2xl mx-auto p-8 bg-white text-gray-900 min-h-screen">
+      <main className="max-w-2xl mx-auto px-4 md:px-8 py-4 md:py-8 bg-white text-gray-900 min-h-screen">
         <p className="text-sm text-gray-400 text-center py-16">Loading…</p>
       </main>
     );
@@ -217,7 +217,7 @@ export default function BinHistoryPage() {
 
   if (!bin) {
     return (
-      <main className="max-w-2xl mx-auto p-8 bg-white text-gray-900 min-h-screen">
+      <main className="max-w-2xl mx-auto px-4 md:px-8 py-4 md:py-8 bg-white text-gray-900 min-h-screen">
         <p className="text-sm text-red-500 text-center py-16">Bin not found.</p>
       </main>
     );

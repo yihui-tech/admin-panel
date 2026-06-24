@@ -159,7 +159,7 @@ export default function CustomersPage() {
   };
 
   return (
-    <main className="max-w-4xl mx-auto p-8 bg-white text-gray-900 min-h-screen">
+    <main className="max-w-4xl mx-auto px-4 md:px-8 py-4 md:py-8 bg-white text-gray-900 min-h-screen">
       <h1 className="text-2xl font-bold mb-6">Customers</h1>
 
       <div className="bg-white border rounded-lg p-6 mb-8">
@@ -168,7 +168,7 @@ export default function CustomersPage() {
           <div className="mb-4 p-3 bg-green-100 text-green-800 rounded">Customer added successfully!</div>
         )}
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">Company Name</label>
               <input name="name" value={form.name} onChange={handleChange} required className="w-full border rounded px-3 py-2" />
@@ -188,7 +188,7 @@ export default function CustomersPage() {
         </form>
       </div>
 
-      <div className="bg-white border rounded-lg overflow-hidden">
+      <div className="bg-white border rounded-lg overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b">
             <tr>
@@ -230,7 +230,7 @@ export default function CustomersPage() {
       {/* Edit customer modal */}
       {editingCustomer && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-lg">
+          <div className="bg-white rounded-lg p-6 w-full max-w-lg mx-4">
             <h2 className="text-lg font-semibold mb-4">Edit Customer</h2>
             <form onSubmit={handleEdit} className="space-y-4">
               <div>
@@ -261,7 +261,7 @@ export default function CustomersPage() {
       {/* Sites management modal */}
       {locationsCustomer && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-xl max-h-[85vh] flex flex-col">
+          <div className="bg-white rounded-lg p-6 w-full max-w-xl mx-4 max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">{locationsCustomer.name} — Sites</h2>
               <button onClick={() => { setLocationsCustomer(null); setEditingLocation(null); }} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
@@ -269,7 +269,7 @@ export default function CustomersPage() {
 
             <form onSubmit={handleSaveLocation} className="border rounded-lg p-4 mb-4 bg-gray-50 space-y-3 shrink-0">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{editingLocation ? 'Edit site' : 'Add site'}</p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium mb-1">Site Name</label>
                   <input value={locationForm.name} onChange={e => setLocationForm(p => ({ ...p, name: e.target.value }))} required placeholder="e.g. Jurong Site" className="w-full border rounded px-3 py-2 bg-white text-sm" />

@@ -304,7 +304,7 @@ export default function AssignmentsPage() {
         </div>
       )}
 
-      <div className="border rounded-lg overflow-hidden mb-6">
+      <div className="border rounded-lg overflow-x-auto mb-6">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b">
             <tr>

@@ -692,14 +692,14 @@ export default function TripDetailPage() {
 
   if (loading || !form || !trip) {
     return (
-      <main className="w-full max-w-7xl mx-auto px-6 py-8 bg-white text-gray-900 min-h-screen flex items-center justify-center">
+      <main className="w-full max-w-7xl mx-auto px-4 md:px-6 py-4 md:py-8 bg-white text-gray-900 min-h-screen flex items-center justify-center">
         <p className="text-gray-500">{loading ? 'Loading...' : 'Trip not found'}</p>
       </main>
     );
   }
 
   return (
-    <main className="w-full max-w-7xl mx-auto px-6 py-6 bg-white text-gray-900 min-h-screen">
+    <main className="w-full max-w-7xl mx-auto px-4 md:px-6 py-4 md:py-6 bg-white text-gray-900 min-h-screen">
       <button onClick={() => router.push('/trips')} className="text-base text-blue-600 hover:underline mb-4 font-medium">
         ← Back to trips
       </button>
@@ -726,7 +726,7 @@ export default function TripDetailPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
         {/* Left: Trip Details + Bins */}
         <div className="col-span-2 space-y-5">
@@ -814,7 +814,7 @@ export default function TripDetailPage() {
 
               {/* Collection / Issue Bin: Customer → Site */}
               {(form.trip_type === 'collection' || isIssueBin) && (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label className="text-sm font-semibold text-gray-700">Customer</label>
@@ -895,7 +895,7 @@ export default function TripDetailPage() {
 
               {/* Customer Drop-off: Customer + Plate + Delivery Location */}
               {isDropoff && (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label className="text-sm font-semibold text-gray-700">Customer</label>
@@ -1281,7 +1281,7 @@ export default function TripDetailPage() {
                     placeholder="If not in list above" className={inputCls} />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1">Gross Time</label>
                     <input type="time" value={loadForm.gross_time}
@@ -1296,7 +1296,7 @@ export default function TripDetailPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1">Gross (kg)</label>
                     <input type="number" step="0.001" min="0" required
