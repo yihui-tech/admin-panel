@@ -4,7 +4,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { FolderKanban, Truck, Package, ShieldCheck, BarChart2, ChevronDown } from 'lucide-react';
+import { FolderKanban, Truck, Package, ShieldCheck, BarChart2, ChevronDown, Menu, X } from 'lucide-react';
 import { createBrowserClient } from '@supabase/ssr';
 
 const sections = [
@@ -63,6 +63,7 @@ export default function Nav() {
   const pathname = usePathname();
   const router = useRouter();
   const [modules, setModules] = useState<Set<string>>(new Set());
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const getDefaultOpen = () => {
     const open = new Set<string>();
@@ -76,6 +77,7 @@ export default function Nav() {
 
   useEffect(() => {
     setOpenSections(getDefaultOpen());
+    setMobileOpen(false);
   }, [pathname]);
 
   const supabase = createBrowserClient(
@@ -137,12 +139,17 @@ export default function Nav() {
 
   const visibleSections = sections.filter(s => modules.has(s.key));
 
-  return (
-    <nav className="w-52 shrink-0 bg-white border-r flex flex-col h-screen sticky top-0">
-      <div className="px-4 py-4 border-b">
+  const sidebarContent = (showClose = false) => (
+    <>
+      <div className="px-4 py-4 border-b flex items-center justify-between">
         <Link href="/">
           <Image src="/logo.png" alt="Yi Hui Tech" width={70} height={70} className="rounded" />
         </Link>
+        {showClose && (
+          <button onClick={() => setMobileOpen(false)} className="p-1 text-gray-400 hover:text-gray-600">
+            <X size={20} />
+          </button>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto py-2">
@@ -200,6 +207,41 @@ export default function Nav() {
           Sign out
         </button>
       </div>
-    </nav>
+    </>
+  );
+
+  return (
+    <>
+      {/* Mobile top bar */}
+      <header className="md:hidden fixed top-0 inset-x-0 h-14 bg-white border-b flex items-center px-4 gap-3 z-40">
+        <button
+          onClick={() => setMobileOpen(true)}
+          className="p-1 text-gray-500 hover:text-gray-800"
+        >
+          <Menu size={22} />
+        </button>
+        <Link href="/">
+          <Image src="/logo.png" alt="Yi Hui Tech" width={28} height={28} className="rounded" />
+        </Link>
+      </header>
+
+      {/* Mobile backdrop */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 z-40 md:hidden"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      {/* Mobile drawer */}
+      <nav className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r flex flex-col md:hidden transition-transform duration-200 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        {sidebarContent(true)}
+      </nav>
+
+      {/* Desktop sidebar */}
+      <nav className="hidden md:flex flex-col w-52 shrink-0 bg-white border-r sticky top-0 h-screen">
+        {sidebarContent(false)}
+      </nav>
+    </>
   );
 }

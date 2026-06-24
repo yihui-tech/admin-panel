@@ -17,7 +17,7 @@ export default function RootLayout({
       <body className="bg-gray-50 min-h-screen">
         <div className="flex min-h-screen">
           <Nav />
-          <main className="flex-1 min-w-0">
+          <main className="flex-1 min-w-0 pt-14 md:pt-0">
             {children}
           </main>
         </div>
