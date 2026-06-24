@@ -141,7 +141,7 @@ export default function Nav() {
     <nav className="w-52 shrink-0 bg-white border-r flex flex-col h-screen sticky top-0">
       <div className="px-4 py-4 border-b">
         <Link href="/">
-          <Image src="/logo.jpg" alt="Yi Hui Tech" width={36} height={36} className="rounded" />
+          <Image src="/logo.png" alt="Yi Hui Tech" width={36} height={36} className="rounded" />
         </Link>
       </div>
 
