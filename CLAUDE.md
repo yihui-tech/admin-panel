@@ -1,4 +1,4 @@
-# CLAUDE.md — worker-assignment
+# CLAUDE.md — admin-panel
 
 Admin portal for Yi Hui Tech. See root `../CLAUDE.md` for shared DB schema, architecture, bin validation rules, and Karpathy guardrails.
 
@@ -9,7 +9,7 @@ Admin portal for Yi Hui Tech. See root `../CLAUDE.md` for shared DB schema, arch
 Five nav sections — each gated by `user_module_permissions`:
 1. **Projects** (`projects` module) — daily worker assignment, timesheets
 2. **Trips** (`trips` module) — truck trip dispatch, WhatsApp message generation, drag-to-reorder, weight reporting
-3. **Bins** (`bins` module) — bin inventory, movement history, swap analytics, rental contract tracking
+3. **Bins** (`bins` module) — bin inventory, movement history, missing-trip detection, swap analytics, rental contract tracking
 4. **Reports** (`management` module) — Cost Dashboard, Driver Location, Vehicle Costs
 5. **Admin** (`admin` module) — Staff management, Customer master data
 
@@ -17,7 +17,7 @@ Module permissions are managed on the `/staff` page. New users start with no acc
 
 **Production URL:** https://ops.yihui.sg
 **Staging URL:** https://stg.ops.yihui.sg
-**Repo:** https://github.com/yihui-tech/worker-assignment
+**Repo:** https://github.com/yihui-tech/admin-panel
 **Companion app:** `trips-records` → https://github.com/yihui-tech/trips-records
 
 ---
@@ -65,12 +65,12 @@ Both apps now apply these rules consistently. `handleMarkComplete` here handles 
 
 | Data | Direction | How |
 |---|---|---|
-| Trip details (vehicle, customer, bins, order) | worker-assignment → trips-records | Written to DB, read by driver app |
-| `trip_order` | worker-assignment → trips-records | Driver list sorted by this field |
-| WhatsApp message | worker-assignment → driver (manual) | Admin copies text, sends via WhatsApp |
-| `weigh_bridge` loads | trips-records → worker-assignment | Driver inserts, admin reads net weight totals |
-| Trip `status` / `completed_at` | trips-records → worker-assignment | Driver marks complete, admin sees status change |
-| Bin action edits (`trip_bins`) | trips-records → worker-assignment | Driver may adjust actions admin set |
+| Trip details (vehicle, customer, bins, order) | admin-panel → trips-records | Written to DB, read by driver app |
+| `trip_order` | admin-panel → trips-records | Driver list sorted by this field |
+| WhatsApp message | admin-panel → driver (manual) | Admin copies text, sends via WhatsApp |
+| `weigh_bridge` loads | trips-records → admin-panel | Driver inserts, admin reads net weight totals |
+| Trip `status` / `completed_at` | trips-records → admin-panel | Driver marks complete, admin sees status change |
+| Bin action edits (`trip_bins`) | trips-records → admin-panel | Driver may adjust actions admin set |
 
 ---
 
@@ -102,10 +102,15 @@ npm run lint         # Run ESLint
 middleware.ts                   # Auth guard — protects all routes, redirects to /login
 app/
   components/
-    Nav.tsx                     # Top navigation: Projects | Trips | Bins | Reports (management only) | Admin (superadmin only)
+    Nav.tsx                     # Top navigation: Projects | Trips | Bins | Reports | Admin — each gated by user_module_permissions
   login/
     page.tsx                    # Login page (email + password via Supabase Auth)
   page.tsx                      # Home dashboard (cost summary + bin locations)
+  api/
+    invite-user/
+      route.ts                  # POST — create Supabase Auth user + user_profiles row (uses service role key)
+    delete-user/
+      route.ts                  # DELETE — remove Supabase Auth user (uses service role key)
   analytics/
     page.tsx                    # Bin swap analytics per customer site + rental contract expiry dashboard
   assignments/
@@ -113,12 +118,16 @@ app/
   bins/
     page.tsx                    # Bin inventory (CRUD + status/location filters + days at site)
     [binId]/
-      page.tsx                  # Bin movement history — timeline of all completed trip actions
+      page.tsx                  # Bin movement history — timeline of trip actions + amber override entries
+  missing-trips/
+    page.tsx                    # Bin gap detection — bins missing a formal trip entry, with prefill links
   management/
     cost/
-      page.tsx                  # Rolling cost dashboard per project (Reports section — management only)
+      page.tsx                  # Rolling cost dashboard per project (Reports section)
     driver-location/
-      page.tsx                  # Driver location report (Reports section — management only)
+      page.tsx                  # Driver location vs CarTrack checkout report (Reports section)
+    vehicle-costs/
+      page.tsx                  # Vehicle fixed costs + diesel spend per month (Reports section)
   customers/
     page.tsx                    # Customer CRUD + multi-site management (Admin section — superadmin only)
   projects/
@@ -126,7 +135,7 @@ app/
   reporting/
     page.tsx                    # Trip weight reporting — date range + material filter, weight summaries
   staff/
-    page.tsx                    # Staff management — assign yards + module permissions per user (Admin section)
+    page.tsx                    # Staff management — create users, assign yards, toggle module permissions (Admin section)
   timesheets/
     page.tsx                    # Timesheet entry per worker per project
   trips/
@@ -143,10 +152,11 @@ app/
 
 Set in Vercel with scope split (Production vs Preview):
 
-| Variable | Production | Preview (staging) |
+| Variable | Scope | Notes |
 |---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | `https://xshucanagbaxgfirtbuc.supabase.co` | `https://pkbqsinxfaiphdargamd.supabase.co` |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | prod anon key | staging anon key |
+| `NEXT_PUBLIC_SUPABASE_URL` | Production + Preview | Prod vs staging URL differs per scope |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Production + Preview | Prod vs staging key differs per scope |
+| `SUPABASE_SERVICE_ROLE_KEY` | Production + Preview | Server-only; used by `/api/invite-user` and `/api/delete-user` to call `auth.admin.*`. **No `NEXT_PUBLIC_` prefix** — never exposed to the browser |
 
 Local development uses `.env.local` (not committed).
 
@@ -158,7 +168,8 @@ All routes are protected by `middleware.ts` using `@supabase/ssr`:
 - Unauthenticated requests redirect to `/login`
 - Authenticated users on `/login` are redirected to `/`
 - Sign out button in the top-right of `Nav.tsx`
-- Admin users are created in Supabase dashboard → Authentication → Users
+- **Users are created from the `/staff` page** (email + password) — no Supabase dashboard needed. The page calls `/api/invite-user` which uses `supabaseAdmin.auth.admin.createUser` with the service role key, then inserts a `user_profiles` row so the user appears immediately.
+- **Deleting users** also done from `/staff` — calls `/api/delete-user` which uses `supabaseAdmin.auth.admin.deleteUser`
 - Use `createBrowserClient` for auth operations in client components
 - Use `createServerClient` in middleware for session refresh and auth checks
 
@@ -180,6 +191,7 @@ All routes are protected by `middleware.ts` using `@supabase/ssr`:
 - Pick a date → see all active workers
 - Assign worker to project; toggle **Split** for morning/afternoon split across two projects
 - Save handles upsert — re-opening same date reloads existing assignments
+- **Project Notes** — below the worker table, a text area appears for each project that has workers assigned that day. Notes are saved/deleted on the same Save button. Saved to `project_daily_notes` (upsert if non-empty, delete if cleared). Notes appear in the `worker-report` WhatsApp as `- line` bullets.
 
 ### /timesheets
 - Regular hours + OT hours per worker per project per date
@@ -189,8 +201,39 @@ All routes are protected by `middleware.ts` using `@supabase/ssr`:
 - Toggle This Month / All Time
 - Filter by project status
 - Rolling labour cost per project from timesheets; total summary card
-- Accessible via Reports nav (management users only)
-- Home dashboard "Full dashboard →" links here
+- Accessible via Reports nav (`management` module)
+- Home dashboard "View all →" links here
+
+**Cost calculation per timesheet entry:**
+```
+daily_rate   = worker.monthly_rate / getWorkingDays(month)
+regular_cost = daily_rate                         (if regular_hours > 4)
+             = (regular_hours / 8) × daily_rate   (if regular_hours ≤ 4)
+ot_1_5_cost  = ot_15_hours × worker["ot_1.5"]    (falls back to hourly_rate × 1.5 if null)
+ot_2_0_cost  = ot_20_hours × worker["ot_2.0"]    (falls back to hourly_rate × 2.0 if null)
+```
+
+**Working days formula:**
+```
+getWorkingDays(year, month, phSet) =
+  weekdays (Mon–Fri, excluding PHs) + saturdays × 0.5 (excluding Saturday PHs)
+```
+PHs are fetched from the `public_holidays` table on every page load. Saturday counts as 0.5 day; Sunday is 0.
+
+### /management/driver-location
+- Month picker; calls `driver_location_report` RPC
+- One row per driver per working day: last CarTrack trip vs adjusted clock-out time
+- Status flags: OK | OT — review location | No vehicle | No tracker data
+- Filter by driver name or status
+- **Export CSV** button (visible when data is loaded) — exports full report (ignores active filters), grouped by driver A→Z, sorted by date within each group; filename `driver-checkout-YYYY-MM.csv`
+- Accessible via Reports nav (`management` module)
+
+### /management/vehicle-costs
+- Month picker + cost-per-litre input (saved to `diesel_prices` table on blur)
+- Calls `vehicle_cost_report` RPC — returns fixed costs + diesel litres/km per vehicle
+- Computes diesel cost, total cost, km/L, $/km client-side using saved cost per litre
+- Summary cards: Total Fixed Cost, Total Diesel Cost, Total Fleet Cost, Fleet km/L
+- Accessible via Reports nav (`management` module)
 
 ### /trips
 - Create and manage truck dispatch trips
@@ -203,6 +246,7 @@ All routes are protected by `middleware.ts` using `@supabase/ssr`:
 
 ### /bins
 - Full CRUD via modal: serial number, type, size, unit weight, status, contract end date, remarks, location
+- **Location change audit:** when a bin's location is saved with a new customer or yard, the modal shows an amber notice ("Location change — a missing trip record will be created") with an optional note field. On save, a `bin_location_overrides` row is inserted automatically — this surfaces the bin on `/missing-trips` until a formal trip resolves it.
 - **Status values:** Active | Rented | Disposed (legacy `retired` treated as Disposed)
   - Rented: shows a blue badge + contract end date with countdown (red = expired, orange = ≤30 days, gray = active)
   - Contract End Date input only shown when status is Rented
@@ -216,12 +260,23 @@ All routes are protected by `middleware.ts` using `@supabase/ssr`:
 ### /bins/[binId]
 - Movement history timeline for a single bin: all completed trip actions (dropoff / pickup / roundtrip)
 - Soft-deleted rows (`removed_at` set) shown dimmed with a "Removed" badge
+- **Amber override entries** (`bin_location_overrides` rows) — shown when an admin corrected the bin's location on `/bins`; includes a "+ Enter missing trip" button → `/trips/new?prefill_bin=<id>&prefill_action=<action>`
 - Sort toggle: newest first / oldest first
 - Header shows current bin status, location, and days since last dropoff
 
 ### /customers
 - Customer CRUD + **Manage Sites** (pin icon) — modal to create/edit/delete `customer_locations` per customer
 - **Admin section only** — visible to superadmins via the Admin nav group
+
+### /missing-trips
+- Detects bins whose recorded location doesn't match their last completed trip, or where an admin flagged a missing formal trip
+- Two detection sources run on every page load (client-side, no RPC):
+  1. **Primary:** compare each bin's current `bins` location columns against what the most recent `trip_bins` action implies (e.g. last action = dropoff but bin is now at yard → missing pickup)
+  2. **Secondary:** `bin_location_overrides` rows with `missing_action` set — written when admin saves a location change on `/bins`; auto-resolved once a formal trip with matching action is completed after the override's `created_at`
+- Bins found via primary detection are excluded from secondary to avoid duplicates
+- Filter tabs: All / Missing Pickups / Missing Deliveries; search by bin serial number
+- Each gap card links to `/bins/[binId]` history and has a "+ Enter missing trip" button → `/trips/new?prefill_bin=<id>&prefill_action=<action>`
+- Under the **Bins** nav section (`bins` module)
 
 ### /analytics
 - Bin swap analytics: dropoff counts per customer site, week/month toggle, bar chart (calls `bin_analytics` RPC)
@@ -253,7 +308,7 @@ Icons — use `lucide-react`, no inline SVGs:
 - History: `<Clock size={14} />`, button `hover:text-purple-600 hover:bg-purple-50`
 - All icon buttons base class: `p-1.5 text-gray-400 rounded`
 
-Nav section icons: `<FolderKanban>` for Projects, `<Truck>` for Trips, `<Package>` for Bins, `<ShieldCheck>` for Admin
+Nav section icons: `<FolderKanban>` for Projects, `<Truck>` for Trips, `<Package>` for Bins, `<BarChart2>` for Reports, `<ShieldCheck>` for Admin
 
 ---
 

@@ -1,8 +1,12 @@
 -- Migration: add-bin-movements-table
--- Creates a dedicated bin_movements table for free-form movement recording.
--- Admin enters bin movements (date, time, action, destination, optional vehicle/driver).
--- The system uses this table to reconstruct per-bin history and detect missing trips.
--- Run in Supabase SQL editor on staging first, then production.
+-- CANCELLED — DO NOT RUN ON PRODUCTION.
+-- This table was designed for free-form movement recording but was superseded before
+-- being deployed. Missing trip detection now uses bin_location_overrides instead.
+-- The migration is kept here for reference only.
+--
+-- Original intent: admin enters bin movements (date, time, action, destination).
+-- Replacement: bin_location_overrides (add-location-override.sql) — written automatically
+--   when an admin saves a location change on the /bins page.
 
 CREATE TABLE IF NOT EXISTS bin_movements (
   id                   uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
