@@ -86,7 +86,24 @@ function detectMismatches(bins: BinRow[], tripBins: TripBinRow[], overrides: Ove
   // ── Primary: trip_bins vs bins current location ──
   for (const bin of bins) {
     const binTrips = byBin[bin.id];
-    if (!binTrips || binTrips.length === 0) continue;
+
+    if (!binTrips || binTrips.length === 0) {
+      // No trip history at all — if the bin is at a customer site, a delivery was never recorded
+      if (bin.customer_location_id || bin.customer_id) {
+        mismatchBinIds.add(bin.id);
+        gaps.push({
+          kind: 'missing_dropoff',
+          bin_id: bin.id,
+          bin_serial: bin.serial_number,
+          description: `No trip on record — bin is at ${binCurrentLabel(bin)}`,
+          last_action_date: '',
+          expected_label: 'Yard',
+          current_label: binCurrentLabel(bin),
+          prefill_action: 'dropoff',
+        });
+      }
+      continue;
+    }
 
     const last = binTrips[0];
     const lastDate = last.trips.trip_date ?? last.trips.completed_at?.slice(0, 10) ?? '';
@@ -308,7 +325,7 @@ export default function MissingTripsPage() {
                       </div>
                       <p className={`text-sm font-medium ${s.text}`}>{gap.description}</p>
                       <p className="text-xs text-gray-500 mt-1">
-                        Last trip: <span className="font-medium">{formatDate(gap.last_action_date)}</span>
+                        Last trip: <span className="font-medium">{gap.last_action_date ? formatDate(gap.last_action_date) : 'none on record'}</span>
                         <span className="mx-1.5 text-gray-300">·</span>
                         Expected: <span className="font-medium">{gap.expected_label}</span>
                         <span className="mx-1.5 text-gray-300">→</span>
