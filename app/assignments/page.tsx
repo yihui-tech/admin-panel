@@ -276,8 +276,18 @@ export default function AssignmentsPage() {
     a.mode === 'full_day' ? a.full_day.project_id : a.morning.project_id || a.afternoon.project_id
   ).length;
 
-  // Active projects for notes section — always visible so notes can be entered before/after assigning workers
-  const activeProjects = projects.filter(p => p.status === 'active');
+  // Projects with workers assigned today (for notes section)
+  const assignedProjectIds = new Set<string>();
+  for (const a of Object.values(assignments)) {
+    if (a.mode === 'full_day' && a.full_day.project_id) assignedProjectIds.add(a.full_day.project_id);
+    if (a.mode === 'split') {
+      if (a.morning.project_id) assignedProjectIds.add(a.morning.project_id);
+      if (a.afternoon.project_id) assignedProjectIds.add(a.afternoon.project_id);
+    }
+  }
+  // Also keep projects that already have saved notes so they can be cleared
+  for (const pid of Object.keys(notes)) assignedProjectIds.add(pid);
+  const activeProjects = projects.filter(p => assignedProjectIds.has(p.id));
 
   return (
     <main className="max-w-5xl mx-auto px-4 md:px-8 py-4 md:py-8 bg-white text-gray-900 min-h-screen">
