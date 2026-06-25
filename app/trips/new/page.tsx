@@ -145,6 +145,7 @@ function NewTripPage() {
   const [showBinDropdown, setShowBinDropdown] = useState(false);
 
   const [tripDate, setTripDate] = useState(todayDate);
+  const [tripTime, setTripTime] = useState('');
   const [loadForm, setLoadForm] = useState(() => ({ ...emptyLoadForm, gross_time: nowTime(), tare_time: nowTime() }));
   const [submitting, setSubmitting] = useState(false);
 
@@ -388,6 +389,7 @@ function NewTripPage() {
         remarks: tripRemarks || null,
         trip_type: tripType,
         trip_date: tripDate || null,
+        trip_time: tripTime || null,
         status,
         completed_at: status === 'completed' ? new Date().toISOString() : null,
       })
@@ -429,6 +431,7 @@ function NewTripPage() {
             location_id: null,
           }).in('id', dropoffBins.map(b => b.bin_id));
         }
+
       }
     }
 
@@ -459,13 +462,13 @@ function NewTripPage() {
   };
 
   return (
-    <main className="w-full max-w-7xl mx-auto px-6 py-6 bg-white text-gray-900 min-h-screen">
+    <main className="w-full max-w-7xl mx-auto px-4 md:px-6 py-4 md:py-6 bg-white text-gray-900 min-h-screen">
       <button onClick={() => router.push('/trips')} className="text-base text-blue-600 hover:underline mb-4 font-medium">
         ← Back
       </button>
       <h1 className="text-2xl font-bold mb-5 text-gray-900">New Trip</h1>
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
         {/* Left: Trip Details + Bins */}
         <div className="col-span-2 space-y-5">
@@ -507,9 +510,15 @@ function NewTripPage() {
             <h2 className="text-sm font-bold text-gray-600 uppercase tracking-wider mb-4">Trip Details</h2>
             <div className="space-y-4">
 
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Trip Date</label>
-                <input type="date" value={tripDate} onChange={e => setTripDate(e.target.value)} className={inputCls} />
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Trip Date</label>
+                  <input type="date" value={tripDate} onChange={e => setTripDate(e.target.value)} className={inputCls} />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Time <span className="text-gray-400 font-normal">(optional)</span></label>
+                  <input type="time" value={tripTime} onChange={e => setTripTime(e.target.value)} className={inputCls} />
+                </div>
               </div>
 
               {!isDropoff && (
@@ -574,7 +583,7 @@ function NewTripPage() {
 
               {/* Collection / Issue Bin: Customer → Site (cascaded) */}
               {(tripType === 'collection' || isIssueBin) && (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label className="text-sm font-semibold text-gray-700">Customer</label>
@@ -671,7 +680,7 @@ function NewTripPage() {
 
               {/* Customer Drop-off: Customer + Plate + Delivery Location */}
               {isDropoff && (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label className="text-sm font-semibold text-gray-700">Customer</label>
@@ -1017,7 +1026,7 @@ function NewTripPage() {
                     placeholder="If not in list above" className={inputCls} />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1">Gross Time</label>
                     <input type="time" value={loadForm.gross_time}
@@ -1032,7 +1041,7 @@ function NewTripPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1">
                       Gross (kg) {tripType === 'outbound' && <span className="text-red-500">*</span>}

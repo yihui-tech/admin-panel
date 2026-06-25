@@ -335,7 +335,7 @@ function TripsPage() {
   };
 
   return (
-    <main className="max-w-7xl mx-auto p-8 bg-white text-gray-900 min-h-screen">
+    <main className="max-w-7xl mx-auto px-4 md:px-8 py-4 md:py-8 bg-white text-gray-900 min-h-screen">
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold">Trips</h1>
         <button onClick={() => router.push('/trips/new')} className="bg-blue-600 text-white px-4 py-2 rounded font-medium hover:bg-blue-700">
@@ -344,7 +344,7 @@ function TripsPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex items-end gap-3 mb-5">
+      <div className="flex flex-wrap items-end gap-3 mb-5">
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Driver</label>
           <select
@@ -381,7 +381,7 @@ function TripsPage() {
       </div>
 
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <div className="bg-white border rounded-lg overflow-hidden">
+        <div className="bg-white border rounded-lg overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
@@ -422,7 +422,7 @@ function TripsPage() {
       {/* WhatsApp message preview modal */}
       {previewTrip && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">WhatsApp Message</h2>
               <button onClick={() => setPreviewTrip(null)} className="text-gray-400 hover:text-gray-600">

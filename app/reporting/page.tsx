@@ -251,7 +251,7 @@ export default function ReportingPage() {
   })();
 
   return (
-    <main className="max-w-5xl mx-auto p-8 bg-white text-gray-900 min-h-screen">
+    <main className="max-w-5xl mx-auto px-4 md:px-8 py-4 md:py-8 bg-white text-gray-900 min-h-screen">
       <h1 className="text-2xl font-bold mb-6">Reporting</h1>
 
       {/* Filters */}
@@ -383,7 +383,7 @@ export default function ReportingPage() {
       </div>
 
       {/* Table: grouped by date+company when no filter, individual trips when company selected */}
-      <div className="bg-white border rounded-lg overflow-hidden">
+      <div className="bg-white border rounded-lg overflow-x-auto">
         <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-gray-700">
             {customerFilter === null ? 'Summary by Company & Date' : 'Trips'}

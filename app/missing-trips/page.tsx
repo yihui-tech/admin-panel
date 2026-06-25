@@ -6,142 +6,174 @@ import { supabase } from '../lib/supabase';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-type BinMovementRaw = {
+type BinRow = {
   id: string;
-  bin_id: string;
-  action: string;
-  movement_date: string;
-  movement_time: string | null;
-  from_label: string | null;
-  to_label: string;
-  bins: { serial_number: string } | null;
+  serial_number: string;
+  customer_id: number | null;
+  customer_location_id: number | null;
+  location_id: number | null;
+  customers: { name: string } | null;
+  customer_locations: { name: string; customers: { name: string } | null } | null;
+  locations: { name: string } | null;
 };
 
-type TripBinRaw = {
-  id: string;
+type TripBinRow = {
   bin_id: string;
   action: string;
-  removed_at: string | null;
   trips: {
     trip_date: string | null;
     completed_at: string | null;
-    customers: { name: string } | null;
+    customer_id: number | null;
+    customer_location_id: number | null;
+    dropoff_id: number | null;
     customer_locations: { name: string; customers: { name: string } | null } | null;
-  } | null;
-  bins: { serial_number: string } | null;
+    locations: { name: string } | null;
+  };
+};
+
+type OverrideRow = {
+  id: string;
+  bin_id: string;
+  from_label: string | null;
+  to_label: string | null;
+  missing_action: string | null;
+  note: string | null;
+  created_at: string;
 };
 
 type Gap = {
-  source: 'trip' | 'movement';
-  kind: 'missing_pickup' | 'missing_dropoff' | 'inconsistency';
+  kind: 'missing_pickup' | 'missing_dropoff';
   bin_id: string;
   bin_serial: string;
   description: string;
-  after_date: string;
-  before_date: string;
-  // movement-source only
-  prev_id?: string;
-  curr_id?: string;
-  at_location?: string;
+  last_action_date: string;
+  expected_label: string;
+  current_label: string;
+  prefill_action: 'pickup' | 'dropoff';
 };
 
 // ── Gap detection ──────────────────────────────────────────────────────────────
 
-function detectMovementGaps(movements: BinMovementRaw[]): Gap[] {
-  const byBin: Record<string, BinMovementRaw[]> = {};
-  for (const m of movements) {
-    if (!byBin[m.bin_id]) byBin[m.bin_id] = [];
-    byBin[m.bin_id].push(m);
-  }
-
-  const gaps: Gap[] = [];
-
-  for (const [binId, binMovements] of Object.entries(byBin)) {
-    const sorted = [...binMovements].sort((a, b) => {
-      const ka = a.movement_date + 'T' + (a.movement_time ?? '00:00');
-      const kb = b.movement_date + 'T' + (b.movement_time ?? '00:00');
-      return ka.localeCompare(kb);
-    });
-
-    const serial = sorted[0].bins?.serial_number ?? binId;
-
-    for (let i = 0; i < sorted.length - 1; i++) {
-      const prev = sorted[i];
-      const curr = sorted[i + 1];
-
-      if (prev.action === 'dropoff' && curr.action === 'dropoff') {
-        gaps.push({ source: 'movement', kind: 'missing_pickup', bin_id: binId, bin_serial: serial,
-          description: `Missing pickup from ${prev.to_label}`, at_location: prev.to_label,
-          after_date: prev.movement_date, before_date: curr.movement_date, prev_id: prev.id, curr_id: curr.id });
-        continue;
-      }
-      if (prev.action === 'pickup' && curr.action === 'pickup') {
-        gaps.push({ source: 'movement', kind: 'missing_dropoff', bin_id: binId, bin_serial: serial,
-          description: `Missing delivery between two pickups`, at_location: curr.from_label ?? curr.to_label,
-          after_date: prev.movement_date, before_date: curr.movement_date, prev_id: prev.id, curr_id: curr.id });
-        continue;
-      }
-      if (prev.action === 'dropoff' && curr.action === 'pickup') {
-        const expectedFrom = prev.to_label.trim().toLowerCase();
-        const actualFrom   = (curr.from_label ?? '').trim().toLowerCase();
-        if (actualFrom && expectedFrom && actualFrom !== expectedFrom) {
-          gaps.push({ source: 'movement', kind: 'inconsistency', bin_id: binId, bin_serial: serial,
-            description: `Delivered to "${prev.to_label}" but collected from "${curr.from_label}"`,
-            at_location: prev.to_label,
-            after_date: prev.movement_date, before_date: curr.movement_date, prev_id: prev.id, curr_id: curr.id });
-        }
-      }
-    }
-  }
-
-  return gaps;
+function binCurrentLabel(b: BinRow): string {
+  if (b.customer_locations) return `${b.customer_locations.customers?.name ?? ''} · ${b.customer_locations.name}`.trim();
+  if (b.customers) return b.customers.name;
+  if (b.locations) return b.locations.name;
+  return 'Unknown';
 }
 
-function detectTripGaps(tripBins: TripBinRaw[]): Gap[] {
-  const byBin: Record<string, TripBinRaw[]> = {};
+function detectMismatches(bins: BinRow[], tripBins: TripBinRow[], overrides: OverrideRow[]): Gap[] {
+  // Group by bin, sort newest first
+  const byBin: Record<string, TripBinRow[]> = {};
   for (const tb of tripBins) {
-    if (tb.removed_at) continue;
     if (!byBin[tb.bin_id]) byBin[tb.bin_id] = [];
     byBin[tb.bin_id].push(tb);
   }
+  for (const arr of Object.values(byBin)) {
+    arr.sort((a, b) => {
+      const da = (a.trips.trip_date ?? a.trips.completed_at?.slice(0, 10) ?? '') + 'T' + (a.trips.completed_at?.slice(11, 16) ?? '00:00');
+      const db = (b.trips.trip_date ?? b.trips.completed_at?.slice(0, 10) ?? '') + 'T' + (b.trips.completed_at?.slice(11, 16) ?? '00:00');
+      return db.localeCompare(da);
+    });
+  }
 
   const gaps: Gap[] = [];
+  const mismatchBinIds = new Set<string>();
 
-  for (const [binId, entries] of Object.entries(byBin)) {
-    const sorted = [...entries].sort((a, b) => {
-      const da = a.trips?.trip_date ?? a.trips?.completed_at?.slice(0, 10) ?? '';
-      const db = b.trips?.trip_date ?? b.trips?.completed_at?.slice(0, 10) ?? '';
-      return da.localeCompare(db);
-    });
+  // Build lookup from active bins
+  const binById: Record<string, BinRow> = {};
+  for (const bin of bins) binById[bin.id] = bin;
 
-    const serial = sorted[0].bins?.serial_number ?? binId;
+  // ── Primary: trip_bins vs bins current location ──
+  for (const bin of bins) {
+    const binTrips = byBin[bin.id];
+    if (!binTrips || binTrips.length === 0) continue;
 
-    for (let i = 0; i < sorted.length - 1; i++) {
-      const prev = sorted[i];
-      const curr = sorted[i + 1];
-      const prevDate = prev.trips?.trip_date ?? prev.trips?.completed_at?.slice(0, 10) ?? '';
-      const currDate = curr.trips?.trip_date ?? curr.trips?.completed_at?.slice(0, 10) ?? '';
+    const last = binTrips[0];
+    const lastDate = last.trips.trip_date ?? last.trips.completed_at?.slice(0, 10) ?? '';
+    const currentAtCustomer = !!(bin.customer_location_id || bin.customer_id);
+    const currentAtYard = !!bin.location_id;
 
-      const prevCustomer = prev.trips?.customer_locations
-        ? `${prev.trips.customer_locations.customers?.name ?? ''} · ${prev.trips.customer_locations.name}`.trim()
-        : prev.trips?.customers?.name ?? 'unknown customer';
+    if (last.action === 'dropoff') {
+      const expCustLocId = last.trips.customer_location_id;
+      const expCustId = last.trips.customer_id;
+      const stillAtSame =
+        (expCustLocId && bin.customer_location_id === expCustLocId) ||
+        (!expCustLocId && expCustId && bin.customer_id === expCustId);
+      if (stillAtSame) continue;
 
-      // treat roundtrip same as pickup — bin ends up at yard
-      const prevEndsAtYard = prev.action === 'pickup' || prev.action === 'roundtrip';
-      const currEndsAtYard = curr.action === 'pickup' || curr.action === 'roundtrip';
+      const lastCustomerLabel = last.trips.customer_locations
+        ? `${last.trips.customer_locations.customers?.name ?? ''} · ${last.trips.customer_locations.name}`.trim()
+        : last.trips.customer_id ? 'Customer' : 'Unknown';
 
-      if (prev.action === 'dropoff' && curr.action === 'dropoff') {
-        gaps.push({ source: 'trip', kind: 'missing_pickup', bin_id: binId, bin_serial: serial,
-          description: `Missing pickup from ${prevCustomer}`,
-          after_date: prevDate, before_date: currDate });
-        continue;
+      mismatchBinIds.add(bin.id);
+      if (currentAtYard) {
+        gaps.push({
+          kind: 'missing_pickup',
+          bin_id: bin.id, bin_serial: bin.serial_number,
+          description: `Missing pickup from ${lastCustomerLabel}`,
+          last_action_date: lastDate,
+          expected_label: lastCustomerLabel,
+          current_label: bin.locations?.name ?? 'Yard',
+          prefill_action: 'pickup',
+        });
+      } else if (currentAtCustomer) {
+        const currentLabel = binCurrentLabel(bin);
+        gaps.push({
+          kind: 'missing_pickup',
+          bin_id: bin.id, bin_serial: bin.serial_number,
+          description: `Missing pickup from ${lastCustomerLabel} before delivery to ${currentLabel}`,
+          last_action_date: lastDate,
+          expected_label: lastCustomerLabel,
+          current_label: currentLabel,
+          prefill_action: 'pickup',
+        });
       }
-      if (prevEndsAtYard && currEndsAtYard) {
-        gaps.push({ source: 'trip', kind: 'missing_dropoff', bin_id: binId, bin_serial: serial,
-          description: `Missing delivery between two collections`,
-          after_date: prevDate, before_date: currDate });
+    } else if (last.action === 'pickup' || last.action === 'roundtrip') {
+      if (currentAtCustomer) {
+        const currentLabel = binCurrentLabel(bin);
+        const lastYardLabel = last.trips.locations?.name ?? 'Yard';
+        mismatchBinIds.add(bin.id);
+        gaps.push({
+          kind: 'missing_dropoff',
+          bin_id: bin.id, bin_serial: bin.serial_number,
+          description: `Missing delivery to ${currentLabel}`,
+          last_action_date: lastDate,
+          expected_label: lastYardLabel,
+          current_label: currentLabel,
+          prefill_action: 'dropoff',
+        });
       }
     }
+  }
+
+  // ── Secondary: bin_location_overrides (explicit admin flags) ──
+  // Show overrides not already covered by a mismatch, unless a formal trip resolved them
+  for (const override of overrides) {
+    if (!override.missing_action) continue;
+    // Skip disposed/unknown bins
+    if (!binById[override.bin_id]) continue;
+    // Skip if already shown via primary mismatch detection
+    if (mismatchBinIds.has(override.bin_id)) continue;
+
+    // Resolved if a matching formal trip was completed after this override was created
+    const isResolved = (byBin[override.bin_id] ?? []).some(
+      tb => tb.action === override.missing_action && (tb.trips.completed_at ?? '') > override.created_at
+    );
+    if (isResolved) continue;
+
+    const bin = binById[override.bin_id];
+    gaps.push({
+      kind: override.missing_action === 'pickup' ? 'missing_pickup' : 'missing_dropoff',
+      bin_id: override.bin_id,
+      bin_serial: bin.serial_number,
+      description: override.missing_action === 'pickup'
+        ? `Missing pickup from ${override.from_label ?? 'unknown location'}`
+        : `Missing delivery to ${override.to_label ?? 'unknown location'}`,
+      last_action_date: override.created_at.slice(0, 10),
+      expected_label: override.from_label ?? 'Unknown',
+      current_label: override.to_label ?? 'Unknown',
+      prefill_action: override.missing_action as 'pickup' | 'dropoff',
+    });
   }
 
   return gaps;
@@ -152,18 +184,6 @@ function detectTripGaps(tripBins: TripBinRaw[]): Gap[] {
 function formatDate(d: string): string {
   return new Date(d).toLocaleDateString('en-SG', { day: '2-digit', month: 'short', year: 'numeric' });
 }
-
-const gapColors: Record<Gap['kind'], { bg: string; text: string; badge: string; badgeText: string; dot: string }> = {
-  missing_pickup:  { bg: 'bg-orange-50',  text: 'text-orange-800', badge: 'bg-orange-100', badgeText: 'text-orange-700', dot: 'bg-orange-400' },
-  missing_dropoff: { bg: 'bg-purple-50',  text: 'text-purple-800', badge: 'bg-purple-100', badgeText: 'text-purple-700', dot: 'bg-purple-400' },
-  inconsistency:   { bg: 'bg-red-50',     text: 'text-red-800',    badge: 'bg-red-100',    badgeText: 'text-red-700',    dot: 'bg-red-400'    },
-};
-
-const gapLabel: Record<Gap['kind'], string> = {
-  missing_pickup:  'Missing Pickup',
-  missing_dropoff: 'Missing Delivery',
-  inconsistency:   'Inconsistency',
-};
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 
@@ -177,28 +197,26 @@ export default function MissingTripsPage() {
   useEffect(() => {
     const run = async () => {
       setLoading(true);
-
-      const [movResult, tripResult] = await Promise.all([
+      const [binResult, tripBinResult, overrideResult] = await Promise.all([
         supabase
-          .from('bin_movements')
-          .select('id, bin_id, action, movement_date, movement_time, from_label, to_label, bins(serial_number)')
-          .order('movement_date')
-          .order('movement_time'),
+          .from('bins')
+          .select('id, serial_number, customer_id, customer_location_id, location_id, customers(name), customer_locations(name, customers(name)), locations(name)')
+          .not('status', 'in', '(disposed,retired)'),
         supabase
           .from('trip_bins')
-          .select('id, bin_id, action, removed_at, trips!inner(trip_date, completed_at, customers(name), customer_locations(name, customers(name))), bins(serial_number)')
-          .eq('trips.status', 'completed'),
+          .select('bin_id, action, trips!inner(trip_date, completed_at, customer_id, customer_location_id, dropoff_id, customer_locations(name, customers(name)), locations!dropoff_id(name))')
+          .eq('trips.status', 'completed')
+          .is('removed_at', null),
+        supabase
+          .from('bin_location_overrides')
+          .select('id, bin_id, from_label, to_label, missing_action, note, created_at')
+          .not('missing_action', 'is', null),
       ]);
 
-      const movGaps = movResult.data
-        ? detectMovementGaps(movResult.data as unknown as BinMovementRaw[])
-        : [];
-      const tripGaps = tripResult.data
-        ? detectTripGaps(tripResult.data as unknown as TripBinRaw[])
-        : [];
-
-      // Trip gaps first (historical), then movement gaps
-      setGaps([...tripGaps, ...movGaps]);
+      const bins = (binResult.data ?? []) as unknown as BinRow[];
+      const tripBins = (tripBinResult.data ?? []) as unknown as TripBinRow[];
+      const overrides = (overrideResult.data ?? []) as unknown as OverrideRow[];
+      setGaps(detectMismatches(bins, tripBins, overrides));
       setLoading(false);
     };
     run();
@@ -214,27 +232,27 @@ export default function MissingTripsPage() {
     all: gaps.length,
     missing_pickup:  gaps.filter(g => g.kind === 'missing_pickup').length,
     missing_dropoff: gaps.filter(g => g.kind === 'missing_dropoff').length,
-    inconsistency:   gaps.filter(g => g.kind === 'inconsistency').length,
+  };
+
+  const gapStyles = {
+    missing_pickup:  { bg: 'bg-orange-50 border-orange-200', badge: 'bg-orange-100 text-orange-700', text: 'text-orange-800', dot: 'bg-orange-400', label: 'Missing Pickup' },
+    missing_dropoff: { bg: 'bg-purple-50 border-purple-200', badge: 'bg-purple-100 text-purple-700', text: 'text-purple-800', dot: 'bg-purple-400', label: 'Missing Delivery' },
   };
 
   return (
-    <main className="max-w-5xl mx-auto p-8 bg-white text-gray-900 min-h-screen">
-      <div className="flex items-start justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold">Missing Trips</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Gaps detected from trip history and recorded bin movements — consecutive dropoffs or pickups with no matching return trip.
-          </p>
-        </div>
+    <main className="max-w-5xl mx-auto px-4 md:px-8 py-4 md:py-8 bg-white text-gray-900 min-h-screen">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold">Missing Trips</h1>
+        <p className="text-sm text-gray-500 mt-1">
+          Bins whose current location does not match their last recorded trip — a formal trip was never entered.
+        </p>
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
         {([
-          ['all',             'All Gaps',           'bg-gray-50 border-gray-200 text-gray-700'],
+          ['all',             'All',                'bg-gray-50 border-gray-200 text-gray-700'],
           ['missing_pickup',  'Missing Pickups',    'bg-orange-50 border-orange-200 text-orange-700'],
           ['missing_dropoff', 'Missing Deliveries', 'bg-purple-50 border-purple-200 text-purple-700'],
-          ['inconsistency',   'Inconsistencies',    'bg-red-50 border-red-200 text-red-700'],
         ] as const).map(([kind, label, style]) => (
           <button
             key={kind}
@@ -247,41 +265,39 @@ export default function MissingTripsPage() {
         ))}
       </div>
 
-      {/* Filter by bin */}
       <div className="mb-4">
         <input
           type="text"
           placeholder="Filter by bin no."
           value={filterBin}
           onChange={e => setFilterBin(e.target.value)}
-          className="border rounded px-3 py-2 text-sm w-48"
+          className="border rounded px-3 py-2 text-sm w-full sm:w-48"
         />
       </div>
 
-      {/* Gaps table */}
       {loading ? (
-        <p className="text-sm text-gray-400 text-center py-16">Analysing movements…</p>
+        <p className="text-sm text-gray-400 text-center py-16">Checking bin locations…</p>
       ) : filtered.length === 0 ? (
         <div className="border rounded-lg p-12 text-center">
           <p className="text-gray-400 text-sm">
             {gaps.length === 0
-              ? 'No gaps detected — all recorded movements form a consistent sequence.'
+              ? 'No discrepancies found — all bins match their last recorded trip.'
               : 'No gaps match this filter.'}
           </p>
         </div>
       ) : (
         <div className="space-y-3">
           {filtered.map((gap, i) => {
-            const c = gapColors[gap.kind];
+            const s = gapStyles[gap.kind];
             return (
-              <div key={i} className={`border rounded-lg p-4 ${c.bg}`}>
+              <div key={i} className={`border rounded-lg p-4 ${s.bg}`}>
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-3">
-                    <div className={`mt-0.5 w-2 h-2 rounded-full shrink-0 ${c.dot}`} style={{ marginTop: 6 }} />
+                    <div className={`w-2 h-2 rounded-full shrink-0 ${s.dot}`} style={{ marginTop: 6 }} />
                     <div>
                       <div className="flex items-center gap-2 mb-1">
-                        <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${c.badge} ${c.badgeText}`}>
-                          {gapLabel[gap.kind]}
+                        <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${s.badge}`}>
+                          {s.label}
                         </span>
                         <button
                           onClick={() => router.push(`/bins/${gap.bin_id}`)}
@@ -289,32 +305,23 @@ export default function MissingTripsPage() {
                         >
                           {gap.bin_serial}
                         </button>
-                        <span className="text-xs text-gray-400">
-                          {gap.source === 'trip' ? 'from trip history' : 'from movement log'}
-                        </span>
                       </div>
-                      <p className={`text-sm font-medium ${c.text}`}>{gap.description}</p>
+                      <p className={`text-sm font-medium ${s.text}`}>{gap.description}</p>
                       <p className="text-xs text-gray-500 mt-1">
-                        Between <span className="font-medium">{formatDate(gap.after_date)}</span>
-                        {' '}and <span className="font-medium">{formatDate(gap.before_date)}</span>
+                        Last trip: <span className="font-medium">{formatDate(gap.last_action_date)}</span>
+                        <span className="mx-1.5 text-gray-300">·</span>
+                        Expected: <span className="font-medium">{gap.expected_label}</span>
+                        <span className="mx-1.5 text-gray-300">→</span>
+                        Actual: <span className="font-medium">{gap.current_label}</span>
                       </p>
                     </div>
                   </div>
-                  {gap.source === 'trip' ? (
-                    <button
-                      onClick={() => router.push(`/trips?prefill_bin=${gap.bin_id}&prefill_action=${gap.kind === 'missing_pickup' ? 'pickup' : 'dropoff'}`)}
-                      className="shrink-0 text-xs font-medium text-blue-600 hover:underline whitespace-nowrap"
-                    >
-                      + Enter missing trip
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => router.push('/bin-movements')}
-                      className="shrink-0 text-xs font-medium text-blue-600 hover:underline whitespace-nowrap"
-                    >
-                      + Add missing movement
-                    </button>
-                  )}
+                  <button
+                    onClick={() => router.push(`/trips/new?prefill_bin=${gap.bin_id}&prefill_action=${gap.prefill_action}`)}
+                    className="shrink-0 text-xs font-medium text-blue-600 hover:underline whitespace-nowrap"
+                  >
+                    + Enter missing trip
+                  </button>
                 </div>
               </div>
             );

@@ -152,7 +152,7 @@ export default function BinsAgingPage() {
   }, [rows]);
 
   return (
-    <main className="bg-white text-gray-900 min-h-screen p-8">
+    <main className="bg-white text-gray-900 min-h-screen px-4 md:px-8 py-4 md:py-8">
       <div className="max-w-5xl mx-auto">
 
         <div className="mb-6">

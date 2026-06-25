@@ -133,11 +133,11 @@ export default function DriverLocationPage() {
   }
 
   return (
-    <main className="bg-white text-gray-900 min-h-screen p-8">
+    <main className="bg-white text-gray-900 min-h-screen px-4 md:px-8 py-4 md:py-8">
       <div className="max-w-6xl mx-auto">
 
         {/* Header */}
-        <div className="flex items-start justify-between mb-6">
+        <div className="flex flex-wrap items-start justify-between mb-6 gap-3">
           <div>
             <h1 className="text-xl font-semibold">Driver Location at Checkout</h1>
             <p className="text-sm text-gray-500 mt-0.5">

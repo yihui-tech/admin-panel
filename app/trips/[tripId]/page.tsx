@@ -26,6 +26,7 @@ type Trip = {
   trip_order: number | null;
   trip_type: string | null;
   trip_date: string | null;
+  trip_time: string | null;
   created_at: string;
   completed_at: string | null;
   customers: { name: string; address: string | null } | null;
@@ -47,6 +48,7 @@ type TripForm = {
   remarks: string;
   trip_type: string;
   trip_date: string;
+  trip_time: string;
 };
 
 type Load = {
@@ -94,7 +96,7 @@ type Location = { id: number; name: string; address: string | null; location_typ
 type OutboundLocation = { id: number; name: string; address: string | null };
 
 const TRIP_SELECT =
-  'id, vehicle_number, driver_id, customer_id, customer_location_id, dropoff_id, source_location_id, outbound_location_id, customer_vehicle_plate, requester, remarks, status, trip_order, trip_type, trip_date, created_at, completed_at, customers(name, address), customer_locations(name, address), locations!dropoff_id(name, address), outbound_locations(name, address)';
+  'id, vehicle_number, driver_id, customer_id, customer_location_id, dropoff_id, source_location_id, outbound_location_id, customer_vehicle_plate, requester, remarks, status, trip_order, trip_type, trip_date, trip_time, created_at, completed_at, customers(name, address), customer_locations(name, address), locations!dropoff_id(name, address), outbound_locations(name, address)';
 
 const todayDate = () => new Date().toISOString().split('T')[0];
 const nowTime = () => {
@@ -143,6 +145,7 @@ const tripToForm = (t: Trip): TripForm => ({
   remarks: t.remarks ?? '',
   trip_type: t.trip_type ?? 'collection',
   trip_date: t.trip_date ?? todayDate(),
+  trip_time: t.trip_time ?? '',
 });
 
 export default function TripDetailPage() {
@@ -352,6 +355,7 @@ export default function TripDetailPage() {
       }).in('id', dropoffBins.map(tb => tb.bin_id));
       if (error) alert('Error updating customer bins: ' + error.message);
     }
+
   };
 
   const handleSaveTrip = async () => {
@@ -384,6 +388,7 @@ export default function TripDetailPage() {
       remarks: form.remarks || null,
       trip_type: form.trip_type || 'collection',
       trip_date: form.trip_date || null,
+      trip_time: form.trip_time || null,
     }).eq('id', trip.id);
     if (!error) {
       setTrip(prev => prev ? {
@@ -466,11 +471,11 @@ export default function TripDetailPage() {
   const rollbackBinLocation = async (binId: string) => {
     type PrevRow = {
       action: 'pickup' | 'dropoff' | 'roundtrip';
-      trips: { dropoff_id: number | null; source_location_id: number | null; customer_id: number | null; customer_location_id: number | null; trip_date: string | null; completed_at: string | null };
+      trips: { dropoff_id: number | null; source_location_id: number | null; customer_id: number | null; customer_location_id: number | null; trip_date: string | null; trip_time: string | null; completed_at: string | null };
     };
     const { data } = await supabase
       .from('trip_bins')
-      .select('action, trips!inner(dropoff_id, source_location_id, customer_id, customer_location_id, trip_date, completed_at)')
+      .select('action, trips!inner(dropoff_id, source_location_id, customer_id, customer_location_id, trip_date, trip_time, completed_at)')
       .eq('bin_id', binId)
       .neq('trip_id', trip!.id)
       .is('removed_at', null)
@@ -478,8 +483,10 @@ export default function TripDetailPage() {
 
     const rows = ((data ?? []) as unknown as PrevRow[]).sort((a, b) => {
       const aDate = a.trips.trip_date ?? a.trips.completed_at?.slice(0, 10) ?? '';
+      const aTime = a.trips.trip_time ?? a.trips.completed_at?.slice(11, 16) ?? '00:00';
       const bDate = b.trips.trip_date ?? b.trips.completed_at?.slice(0, 10) ?? '';
-      return bDate.localeCompare(aDate);
+      const bTime = b.trips.trip_time ?? b.trips.completed_at?.slice(11, 16) ?? '00:00';
+      return `${bDate}T${bTime}`.localeCompare(`${aDate}T${aTime}`);
     });
 
     if (rows.length === 0) {
@@ -678,14 +685,14 @@ export default function TripDetailPage() {
 
   if (loading || !form || !trip) {
     return (
-      <main className="w-full max-w-7xl mx-auto px-6 py-8 bg-white text-gray-900 min-h-screen flex items-center justify-center">
+      <main className="w-full max-w-7xl mx-auto px-4 md:px-6 py-4 md:py-8 bg-white text-gray-900 min-h-screen flex items-center justify-center">
         <p className="text-gray-500">{loading ? 'Loading...' : 'Trip not found'}</p>
       </main>
     );
   }
 
   return (
-    <main className="w-full max-w-7xl mx-auto px-6 py-6 bg-white text-gray-900 min-h-screen">
+    <main className="w-full max-w-7xl mx-auto px-4 md:px-6 py-4 md:py-6 bg-white text-gray-900 min-h-screen">
       <button onClick={() => router.push('/trips')} className="text-base text-blue-600 hover:underline mb-4 font-medium">
         ← Back to trips
       </button>
@@ -712,7 +719,7 @@ export default function TripDetailPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
         {/* Left: Trip Details + Bins */}
         <div className="col-span-2 space-y-5">
@@ -739,9 +746,15 @@ export default function TripDetailPage() {
           <section className="border-2 border-gray-200 rounded-xl p-5">
             <h2 className="text-sm font-bold text-gray-600 uppercase tracking-wider mb-4">Trip Details</h2>
             <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Trip Date</label>
-                <input type="date" value={form.trip_date} onChange={setField('trip_date')} className={inputCls} />
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Trip Date</label>
+                  <input type="date" value={form.trip_date} onChange={setField('trip_date')} className={inputCls} />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Time <span className="text-gray-400 font-normal">(optional)</span></label>
+                  <input type="time" value={form.trip_time} onChange={setField('trip_time')} className={inputCls} />
+                </div>
               </div>
 
               {!isDropoff && (
@@ -794,7 +807,7 @@ export default function TripDetailPage() {
 
               {/* Collection / Issue Bin: Customer → Site */}
               {(form.trip_type === 'collection' || isIssueBin) && (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label className="text-sm font-semibold text-gray-700">Customer</label>
@@ -875,7 +888,7 @@ export default function TripDetailPage() {
 
               {/* Customer Drop-off: Customer + Plate + Delivery Location */}
               {isDropoff && (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label className="text-sm font-semibold text-gray-700">Customer</label>
@@ -1261,7 +1274,7 @@ export default function TripDetailPage() {
                     placeholder="If not in list above" className={inputCls} />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1">Gross Time</label>
                     <input type="time" value={loadForm.gross_time}
@@ -1276,7 +1289,7 @@ export default function TripDetailPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1">Gross (kg)</label>
                     <input type="number" step="0.001" min="0" required

@@ -114,7 +114,7 @@ export default function ProjectsPage() {
   };
 
   return (
-    <main className="max-w-4xl mx-auto p-8 bg-white text-gray-900 min-h-screen">
+    <main className="max-w-4xl mx-auto px-4 md:px-8 py-4 md:py-8 bg-white text-gray-900 min-h-screen">
       <h1 className="text-2xl font-bold mb-6">Projects</h1>
 
       {/* Create Form */}
@@ -128,7 +128,7 @@ export default function ProjectsPage() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">Project Name</label>
               <input name="name" value={form.name} onChange={handleChange} required className="w-full border rounded px-3 py-2" />
@@ -139,7 +139,7 @@ export default function ProjectsPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">Start Date</label>
               <input name="start_date" type="date" value={form.start_date} onChange={handleChange} required className="w-full border rounded px-3 py-2" />
@@ -165,7 +165,7 @@ export default function ProjectsPage() {
       </div>
 
       {/* Projects List */}
-      <div className="bg-white border rounded-lg overflow-hidden">
+      <div className="bg-white border rounded-lg overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b">
             <tr>
@@ -219,7 +219,7 @@ export default function ProjectsPage() {
       {/* Edit Modal */}
       {editingProject && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-lg">
+          <div className="bg-white rounded-lg p-6 w-full max-w-lg mx-4">
             <h2 className="text-lg font-semibold mb-4">Edit Project</h2>
 
             <form onSubmit={handleEdit} className="space-y-4">
@@ -231,7 +231,7 @@ export default function ProjectsPage() {
                 <label className="block text-sm font-medium mb-1">Location</label>
                 <input name="location" value={editingProject.location} onChange={handleEditChange} required className="w-full border rounded px-3 py-2" />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">Start Date</label>
                   <input name="start_date" type="date" value={editingProject.start_date} onChange={handleEditChange} required className="w-full border rounded px-3 py-2" />

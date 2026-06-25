@@ -29,6 +29,7 @@ type WorkerAssignment = {
 };
 
 type AssignmentMap = Record<string, WorkerAssignment>;
+type NotesMap = Record<string, string>; // project_id → notes text
 
 const emptyShift = (): ShiftAssignment => ({ project_id: '' });
 
@@ -43,6 +44,7 @@ export default function AssignmentsPage() {
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [assignments, setAssignments] = useState<AssignmentMap>({});
+  const [notes, setNotes] = useState<NotesMap>({});
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -61,17 +63,15 @@ export default function AssignmentsPage() {
 
   useEffect(() => {
     const fetchAssignments = async () => {
-      const { data } = await supabase
-        .from('assignments')
-        .select('id, worker_id, project_id, shift')
-        .eq('assigned_date', date);
+      const [{ data: aData }, { data: nData }] = await Promise.all([
+        supabase.from('assignments').select('id, worker_id, project_id, shift').eq('assigned_date', date),
+        supabase.from('project_daily_notes').select('project_id, notes').eq('date', date),
+      ]);
 
       const map: AssignmentMap = {};
-
-      if (data) {
-        data.forEach(a => {
+      if (aData) {
+        aData.forEach(a => {
           if (!map[a.worker_id]) map[a.worker_id] = emptyAssignment();
-
           if (a.shift === 'full_day') {
             map[a.worker_id].mode = 'full_day';
             map[a.worker_id].full_day = { project_id: a.project_id, assignment_id: a.id };
@@ -85,7 +85,13 @@ export default function AssignmentsPage() {
         });
       }
 
+      const notesMap: NotesMap = {};
+      if (nData) {
+        nData.forEach(n => { notesMap[n.project_id] = n.notes ?? ''; });
+      }
+
       setAssignments(map);
+      setNotes(notesMap);
     };
     fetchAssignments();
   }, [date]);
@@ -249,6 +255,19 @@ export default function AssignmentsPage() {
       }
     }
 
+    // Save project daily notes (upsert non-empty, delete cleared ones)
+    for (const [projectId, text] of Object.entries(notes)) {
+      if (text.trim()) {
+        await supabase.from('project_daily_notes').upsert(
+          { project_id: projectId, date, notes: text.trim() },
+          { onConflict: 'project_id,date' }
+        );
+      } else {
+        await supabase.from('project_daily_notes').delete()
+          .eq('project_id', projectId).eq('date', date);
+      }
+    }
+
     setLoading(false);
     setSuccess(true);
   };
@@ -257,8 +276,21 @@ export default function AssignmentsPage() {
     a.mode === 'full_day' ? a.full_day.project_id : a.morning.project_id || a.afternoon.project_id
   ).length;
 
+  // Projects with workers assigned today (for notes section)
+  const assignedProjectIds = new Set<string>();
+  for (const a of Object.values(assignments)) {
+    if (a.mode === 'full_day' && a.full_day.project_id) assignedProjectIds.add(a.full_day.project_id);
+    if (a.mode === 'split') {
+      if (a.morning.project_id) assignedProjectIds.add(a.morning.project_id);
+      if (a.afternoon.project_id) assignedProjectIds.add(a.afternoon.project_id);
+    }
+  }
+  // Also keep projects that already have saved notes so they can be cleared
+  for (const pid of Object.keys(notes)) assignedProjectIds.add(pid);
+  const activeProjects = projects.filter(p => assignedProjectIds.has(p.id));
+
   return (
-    <main className="max-w-5xl mx-auto p-8 bg-white text-gray-900 min-h-screen">
+    <main className="max-w-5xl mx-auto px-4 md:px-8 py-4 md:py-8 bg-white text-gray-900 min-h-screen">
       <h1 className="text-2xl font-bold mb-6">Daily Assignments</h1>
 
       <div className="flex items-center gap-4 mb-6">
@@ -282,7 +314,7 @@ export default function AssignmentsPage() {
         </div>
       )}
 
-      <div className="border rounded-lg overflow-hidden mb-6">
+      <div className="border rounded-lg overflow-x-auto mb-6">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b">
             <tr>
@@ -375,6 +407,28 @@ export default function AssignmentsPage() {
           </tbody>
         </table>
       </div>
+
+      {activeProjects.length > 0 && (
+        <div className="mb-6">
+          <h2 className="text-base font-semibold mb-3">Project Notes</h2>
+          <div className="space-y-4">
+            {activeProjects.map(p => (
+              <div key={p.id}>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {p.name}{p.location ? ` — ${p.location}` : ''}
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder={'One note per line, e.g.\ndismantling works\ngas cutting works'}
+                  value={notes[p.id] ?? ''}
+                  onChange={e => setNotes(prev => ({ ...prev, [p.id]: e.target.value }))}
+                  className="w-full max-w-lg border rounded px-3 py-2 text-sm resize-y"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <button
         onClick={handleSave}

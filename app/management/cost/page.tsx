@@ -153,11 +153,11 @@ export default function CostPage() {
   };
 
   return (
-    <main className="max-w-5xl mx-auto p-8 bg-white text-gray-900 min-h-screen">
+    <main className="max-w-5xl mx-auto px-4 md:px-8 py-4 md:py-8 bg-white text-gray-900 min-h-screen">
       <h1 className="text-2xl font-bold mb-6">Project</h1>
 
       {/* Controls */}
-      <div className="flex items-center gap-4 mb-6">
+      <div className="flex flex-wrap items-center gap-4 mb-6">
         <div className="flex border rounded overflow-hidden">
           <button
             onClick={() => setView('month')}
@@ -207,7 +207,7 @@ export default function CostPage() {
       {loading ? (
         <div className="text-center py-12 text-gray-400">Loading...</div>
       ) : (
-        <div className="border rounded-lg overflow-hidden">
+        <div className="border rounded-lg overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>

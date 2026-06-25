@@ -331,13 +331,13 @@ export default function ProjectDetailPage() {
   };
 
   if (loading) return (
-    <main className="max-w-5xl mx-auto p-8 bg-white text-gray-900 min-h-screen">
+    <main className="max-w-5xl mx-auto px-4 md:px-8 py-4 md:py-8 bg-white text-gray-900 min-h-screen">
       <div className="text-center py-16 text-gray-400">Loading...</div>
     </main>
   );
 
   if (!project) return (
-    <main className="max-w-5xl mx-auto p-8 bg-white text-gray-900 min-h-screen">
+    <main className="max-w-5xl mx-auto px-4 md:px-8 py-4 md:py-8 bg-white text-gray-900 min-h-screen">
       <div className="text-center py-16 text-gray-400">Project not found.</div>
     </main>
   );
@@ -346,7 +346,7 @@ export default function ProjectDetailPage() {
   const selectedEstimate = invoiceForm.estimate_id ? estimateMap[invoiceForm.estimate_id] : null;
 
   return (
-    <main className="max-w-5xl mx-auto p-8 bg-white text-gray-900 min-h-screen">
+    <main className="max-w-5xl mx-auto px-4 md:px-8 py-4 md:py-8 bg-white text-gray-900 min-h-screen">
 
       {/* Back + header */}
       <button onClick={() => router.push('/projects')} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 mb-4">
@@ -363,7 +363,7 @@ export default function ProjectDetailPage() {
       </div>
 
       {/* Score cards */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <div className="border rounded-lg p-4">
           <p className="text-xs text-gray-500 mb-1">Labour Cost</p>
           <p className="text-xl font-bold">${fmt(labourTotal)}</p>
@@ -561,7 +561,7 @@ export default function ProjectDetailPage() {
           {/* Labour */}
           <div>
             <h2 className="text-base font-semibold mb-3">Labour (from Timesheets)</h2>
-            <div className="border rounded-lg overflow-hidden">
+            <div className="border rounded-lg overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b">
                   <tr>
@@ -597,7 +597,7 @@ export default function ProjectDetailPage() {
           {/* All invoices — flat list */}
           <div>
             <h2 className="text-base font-semibold mb-3">All Invoices</h2>
-            <div className="border rounded-lg overflow-hidden">
+            <div className="border rounded-lg overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b">
                   <tr>
@@ -655,7 +655,7 @@ export default function ProjectDetailPage() {
           {/* Grand total */}
           <div>
             <h2 className="text-base font-semibold mb-3">Grand Total</h2>
-            <div className="border rounded-lg overflow-hidden">
+            <div className="border rounded-lg overflow-x-auto">
               <table className="w-full text-sm">
                 <tbody>
                   <tr className="border-b"><td className="px-4 py-3 text-gray-600">Labour Cost</td><td className="px-4 py-3 text-right">${fmt(labourTotal)}</td></tr>
@@ -699,7 +699,7 @@ export default function ProjectDetailPage() {
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">Date</label>
                   <input type="date" required value={invoiceForm.date}
@@ -723,7 +723,7 @@ export default function ProjectDetailPage() {
                   className="w-full border rounded px-3 py-2" />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">
                     Qty {selectedEstimate?.unit && <span className="text-gray-400 font-normal">({selectedEstimate.unit})</span>}
@@ -742,7 +742,7 @@ export default function ProjectDetailPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">
                     Total Amount (SGD)
@@ -783,7 +783,7 @@ export default function ProjectDetailPage() {
           <div className="bg-white rounded-lg p-6 w-full max-w-lg">
             <h2 className="text-lg font-semibold mb-4">{editingEstimate ? 'Edit Estimate Line' : 'Add Estimate Line'}</h2>
             <form onSubmit={handleSaveEstimate} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">Category</label>
                   <input required value={estimateForm.category}
@@ -799,7 +799,7 @@ export default function ProjectDetailPage() {
                     className="w-full border rounded px-3 py-2" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">Estimated Qty</label>
                   <input type="number" step="0.5" min="0" required value={estimateForm.estimated_qty}
