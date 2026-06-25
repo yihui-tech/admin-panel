@@ -31,6 +31,16 @@ type TripBinRow = {
   };
 };
 
+type OverrideRow = {
+  id: string;
+  bin_id: string;
+  from_label: string | null;
+  to_label: string | null;
+  missing_action: string | null;
+  note: string | null;
+  created_at: string;
+};
+
 type Gap = {
   kind: 'missing_pickup' | 'missing_dropoff';
   bin_id: string;
@@ -51,7 +61,7 @@ function binCurrentLabel(b: BinRow): string {
   return 'Unknown';
 }
 
-function detectMismatches(bins: BinRow[], tripBins: TripBinRow[]): Gap[] {
+function detectMismatches(bins: BinRow[], tripBins: TripBinRow[], overrides: OverrideRow[]): Gap[] {
   // Group by bin, sort newest first
   const byBin: Record<string, TripBinRow[]> = {};
   for (const tb of tripBins) {
@@ -67,10 +77,16 @@ function detectMismatches(bins: BinRow[], tripBins: TripBinRow[]): Gap[] {
   }
 
   const gaps: Gap[] = [];
+  const mismatchBinIds = new Set<string>();
 
+  // Build lookup from active bins
+  const binById: Record<string, BinRow> = {};
+  for (const bin of bins) binById[bin.id] = bin;
+
+  // ── Primary: trip_bins vs bins current location ──
   for (const bin of bins) {
     const binTrips = byBin[bin.id];
-    if (!binTrips || binTrips.length === 0) continue; // no trip history — no baseline
+    if (!binTrips || binTrips.length === 0) continue;
 
     const last = binTrips[0];
     const lastDate = last.trips.trip_date ?? last.trips.completed_at?.slice(0, 10) ?? '';
@@ -78,7 +94,6 @@ function detectMismatches(bins: BinRow[], tripBins: TripBinRow[]): Gap[] {
     const currentAtYard = !!bin.location_id;
 
     if (last.action === 'dropoff') {
-      // Bin should still be at the customer it was last delivered to
       const expCustLocId = last.trips.customer_location_id;
       const expCustId = last.trips.customer_id;
       const stillAtSame =
@@ -90,6 +105,7 @@ function detectMismatches(bins: BinRow[], tripBins: TripBinRow[]): Gap[] {
         ? `${last.trips.customer_locations.customers?.name ?? ''} · ${last.trips.customer_locations.name}`.trim()
         : last.trips.customer_id ? 'Customer' : 'Unknown';
 
+      mismatchBinIds.add(bin.id);
       if (currentAtYard) {
         gaps.push({
           kind: 'missing_pickup',
@@ -113,10 +129,10 @@ function detectMismatches(bins: BinRow[], tripBins: TripBinRow[]): Gap[] {
         });
       }
     } else if (last.action === 'pickup' || last.action === 'roundtrip') {
-      // Bin should be at a yard — flag if it's now at a customer
       if (currentAtCustomer) {
         const currentLabel = binCurrentLabel(bin);
         const lastYardLabel = last.trips.locations?.name ?? 'Yard';
+        mismatchBinIds.add(bin.id);
         gaps.push({
           kind: 'missing_dropoff',
           bin_id: bin.id, bin_serial: bin.serial_number,
@@ -128,6 +144,36 @@ function detectMismatches(bins: BinRow[], tripBins: TripBinRow[]): Gap[] {
         });
       }
     }
+  }
+
+  // ── Secondary: bin_location_overrides (explicit admin flags) ──
+  // Show overrides not already covered by a mismatch, unless a formal trip resolved them
+  for (const override of overrides) {
+    if (!override.missing_action) continue;
+    // Skip disposed/unknown bins
+    if (!binById[override.bin_id]) continue;
+    // Skip if already shown via primary mismatch detection
+    if (mismatchBinIds.has(override.bin_id)) continue;
+
+    // Resolved if a matching formal trip was completed after this override was created
+    const isResolved = (byBin[override.bin_id] ?? []).some(
+      tb => tb.action === override.missing_action && (tb.trips.completed_at ?? '') > override.created_at
+    );
+    if (isResolved) continue;
+
+    const bin = binById[override.bin_id];
+    gaps.push({
+      kind: override.missing_action === 'pickup' ? 'missing_pickup' : 'missing_dropoff',
+      bin_id: override.bin_id,
+      bin_serial: bin.serial_number,
+      description: override.missing_action === 'pickup'
+        ? `Missing pickup from ${override.from_label ?? 'unknown location'}`
+        : `Missing delivery to ${override.to_label ?? 'unknown location'}`,
+      last_action_date: override.created_at.slice(0, 10),
+      expected_label: override.from_label ?? 'Unknown',
+      current_label: override.to_label ?? 'Unknown',
+      prefill_action: override.missing_action as 'pickup' | 'dropoff',
+    });
   }
 
   return gaps;
@@ -151,7 +197,7 @@ export default function MissingTripsPage() {
   useEffect(() => {
     const run = async () => {
       setLoading(true);
-      const [binResult, tripBinResult] = await Promise.all([
+      const [binResult, tripBinResult, overrideResult] = await Promise.all([
         supabase
           .from('bins')
           .select('id, serial_number, customer_id, customer_location_id, location_id, customers(name), customer_locations(name, customers(name)), locations(name)')
@@ -161,11 +207,16 @@ export default function MissingTripsPage() {
           .select('bin_id, action, trips!inner(trip_date, completed_at, customer_id, customer_location_id, dropoff_id, customer_locations(name, customers(name)), locations!dropoff_id(name))')
           .eq('trips.status', 'completed')
           .is('removed_at', null),
+        supabase
+          .from('bin_location_overrides')
+          .select('id, bin_id, from_label, to_label, missing_action, note, created_at')
+          .not('missing_action', 'is', null),
       ]);
 
       const bins = (binResult.data ?? []) as unknown as BinRow[];
       const tripBins = (tripBinResult.data ?? []) as unknown as TripBinRow[];
-      setGaps(detectMismatches(bins, tripBins));
+      const overrides = (overrideResult.data ?? []) as unknown as OverrideRow[];
+      setGaps(detectMismatches(bins, tripBins, overrides));
       setLoading(false);
     };
     run();

@@ -432,13 +432,6 @@ function NewTripPage() {
           }).in('id', dropoffBins.map(b => b.bin_id));
         }
 
-        // Clear gap markers for any bin whose formal trip is now recorded
-        for (const b of pendingBins) {
-          await supabase.from('bin_movements')
-            .delete()
-            .eq('bin_id', b.bin_id)
-            .eq('action', b.action);
-        }
       }
     }
 

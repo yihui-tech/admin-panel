@@ -356,13 +356,6 @@ export default function TripDetailPage() {
       if (error) alert('Error updating customer bins: ' + error.message);
     }
 
-    // Clear gap markers now that formal trips cover these movements
-    for (const tb of tripBins.filter(tb => !tb.removed_at)) {
-      await supabase.from('bin_movements')
-        .delete()
-        .eq('bin_id', tb.bin_id)
-        .eq('action', tb.action);
-    }
   };
 
   const handleSaveTrip = async () => {

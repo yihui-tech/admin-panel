@@ -90,7 +90,6 @@ export default function BinsPage() {
   const [editingBin, setEditingBin] = useState<Bin | null>(null);
   const [form, setForm] = useState<BinForm>(emptyForm);
   const [loading, setLoading] = useState(false);
-  const [movementDate, setMovementDate] = useState('');
   const [movementNote, setMovementNote] = useState('');
   const [locationFilter, setLocationFilter] = useState<'all' | 'customer' | 'yard' | 'unknown'>('all');
   const [typeFilter, setTypeFilter] = useState('');
@@ -149,7 +148,6 @@ export default function BinsPage() {
   const openCreate = () => {
     setForm(emptyForm);
     setEditingBin(null);
-    setMovementDate(new Date().toISOString().slice(0, 10));
     setMovementNote('');
     setShowModal(true);
   };
@@ -157,7 +155,6 @@ export default function BinsPage() {
   const openEdit = (bin: Bin) => {
     setForm(binToForm(bin));
     setEditingBin(bin);
-    setMovementDate(new Date().toISOString().slice(0, 10));
     setMovementNote('');
     setShowModal(true);
   };
@@ -218,16 +215,13 @@ export default function BinsPage() {
           }
           return 'Unknown';
         })();
-        const action = form.locationType === 'customer' ? 'dropoff' : form.locationType === 'location' ? 'pickup' : null;
-        if (action) {
-          await supabase.from('bin_movements').insert({
+        const missing_action = form.locationType === 'customer' ? 'dropoff' : form.locationType === 'location' ? 'pickup' : null;
+        if (missing_action) {
+          await supabase.from('bin_location_overrides').insert({
             bin_id: savedBinId,
-            action,
-            movement_date: movementDate || new Date().toISOString().slice(0, 10),
             from_label: fromLabel,
             to_label: toLabel,
-            customer_location_id: newCustLocId,
-            location_id: newLocId,
+            missing_action,
             note: movementNote || null,
           });
         }
@@ -570,28 +564,17 @@ export default function BinsPage() {
                 );
                 if (!locationWillChange) return null;
                 return (
-                  <div className="rounded-lg p-3 border bg-teal-50 border-teal-200">
-                    <p className="text-sm font-medium text-teal-800 mb-2">
-                      Location change detected — this will be recorded as a missing trip
+                  <div className="rounded-lg p-3 border bg-amber-50 border-amber-200">
+                    <p className="text-sm font-medium text-amber-800 mb-2">
+                      Location change — a missing trip record will be created
                     </p>
-                    <div className="space-y-2">
-                      <div>
-                        <label className="block text-xs font-medium text-teal-700 mb-1">Date of movement</label>
-                        <input
-                          type="date"
-                          value={movementDate}
-                          onChange={e => setMovementDate(e.target.value)}
-                          className="w-full border border-teal-300 rounded px-3 py-1.5 text-sm bg-white"
-                        />
-                      </div>
-                      <input
-                        type="text"
-                        value={movementNote}
-                        onChange={e => setMovementNote(e.target.value)}
-                        placeholder="Optional note"
-                        className="w-full border border-teal-300 rounded px-3 py-1.5 text-sm bg-white"
-                      />
-                    </div>
+                    <input
+                      type="text"
+                      value={movementNote}
+                      onChange={e => setMovementNote(e.target.value)}
+                      placeholder="Optional note"
+                      className="w-full border border-amber-300 rounded px-3 py-1.5 text-sm bg-white"
+                    />
                   </div>
                 );
               })()}
