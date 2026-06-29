@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useRef, useState, Suspense } from 'react';
+import { useEffect, useMemo, useRef, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '../lib/supabase';
 import {
@@ -44,12 +44,20 @@ type Trip = {
   customers: { name: string; address: string | null; contact_person: string | null; contact_number: string | null } | null;
   customer_locations: { name: string; address: string | null; contact_person: string | null; contact_number: string | null } | null;
   locations: { name: string; address: string | null } | null;
+  source_location: { name: string } | null;
   outbound_locations: { name: string } | null;
   weigh_bridge: { net_weight: number }[];
   trip_bins: { id: string; bin_id: string; action: string; removed_at: string | null; bins: { serial_number: string } | null }[];
 };
 
 type Driver = { employee_id: string; name: string };
+
+const FILTER_KEY = 'admin-panel-trips-filters';
+const TYPE_OPTIONS = ['Collection', 'Outbound', 'Drop-off', 'Issue Bin'];
+
+const inputCls = 'w-full border rounded px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-500';
+const dropdownCls = 'absolute z-20 top-full left-0 right-0 mt-1 border rounded bg-white shadow-lg max-h-48 overflow-y-auto';
+const dropdownItemCls = 'w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b last:border-b-0 text-gray-900';
 
 const statusBadge = (status: string) => {
   const styles: Record<string, string> = {
@@ -65,6 +73,19 @@ const formatDate = (iso: string) =>
 
 const totalNetWeight = (trip: Trip) =>
   trip.weigh_bridge.reduce((sum, w) => sum + w.net_weight, 0);
+
+const tripTypeLabel = (trip: Trip) => {
+  if (trip.trip_type === 'outbound') return 'Outbound';
+  if (trip.trip_type === 'customer_dropoff') return 'Drop-off';
+  if (trip.trip_type === 'issue_bin') return 'Issue Bin';
+  return 'Collection';
+};
+
+const tripYardName = (trip: Trip) =>
+  trip.trip_type === 'outbound' ? (trip.source_location?.name ?? '') : (trip.locations?.name ?? '');
+
+const match = (value: string, query: string) =>
+  !query || value.toLowerCase().includes(query.toLowerCase());
 
 type TripRowHandlers = {
   onMarkComplete: (id: string) => void;
@@ -172,8 +193,6 @@ function TripsPage() {
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [previewTrip, setPreviewTrip] = useState<Trip | null>(null);
   const [copied, setCopied] = useState(false);
-  const [driverFilter, setDriverFilter] = useState('');
-  const [dateFilter, setDateFilter] = useState('');
 
   const searchParams = useSearchParams();
   const prefillBinId = searchParams.get('prefill_bin');
@@ -185,10 +204,38 @@ function TripsPage() {
     useSensor(TouchSensor),
   );
 
+  const [saved] = useState<Record<string, string>>(() => {
+    if (typeof window === 'undefined') return {};
+    try { const s = sessionStorage.getItem(FILTER_KEY); return s ? JSON.parse(s) : {}; }
+    catch { return {}; }
+  });
+
+  const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'open'>(
+    (saved.statusFilter as 'all' | 'completed' | 'open') ?? 'all'
+  );
+  const [dateFilter, setDateFilter] = useState(saved.dateFilter ?? '');
+  const [typeFilter, setTypeFilter] = useState(saved.typeFilter ?? '');
+  const [yardFilter, setYardFilter] = useState(saved.yardFilter ?? '');
+  const [driverFilter, setDriverFilter] = useState(saved.driverFilter ?? '');
+  const [vehicleFilter, setVehicleFilter] = useState(saved.vehicleFilter ?? '');
+  const [customerFilter, setCustomerFilter] = useState(saved.customerFilter ?? '');
+
+  const [showType, setShowType] = useState(false);
+  const [showYard, setShowYard] = useState(false);
+  const [showDriver, setShowDriver] = useState(false);
+  const [showVehicle, setShowVehicle] = useState(false);
+  const [showCustomer, setShowCustomer] = useState(false);
+
+  useEffect(() => {
+    sessionStorage.setItem(FILTER_KEY, JSON.stringify({
+      statusFilter, dateFilter, typeFilter, yardFilter, driverFilter, vehicleFilter, customerFilter,
+    }));
+  }, [statusFilter, dateFilter, typeFilter, yardFilter, driverFilter, vehicleFilter, customerFilter]);
+
   const fetchTrips = async () => {
     const { data } = await supabase
       .from('trips')
-      .select('id, vehicle_number, driver_id, customer_id, customer_location_id, customer_vehicle_plate, dropoff_id, source_location_id, outbound_location_id, trip_type, requester, remarks, status, trip_order, trip_date, created_at, completed_at, customers(name, address, contact_person, contact_number), customer_locations(name, address, contact_person, contact_number), locations(name, address), outbound_locations(name), weigh_bridge(net_weight), trip_bins(id, bin_id, action, removed_at, bins(serial_number))')
+      .select('id, vehicle_number, driver_id, customer_id, customer_location_id, customer_vehicle_plate, dropoff_id, source_location_id, outbound_location_id, trip_type, requester, remarks, status, trip_order, trip_date, created_at, completed_at, customers(name, address, contact_person, contact_number), customer_locations(name, address, contact_person, contact_number), locations!dropoff_id(name, address), source_location:locations!source_location_id(name), outbound_locations(name), weigh_bridge(net_weight), trip_bins(id, bin_id, action, removed_at, bins(serial_number))')
       .order('created_at', { ascending: false });
     if (data) setTrips(data as unknown as Trip[]);
   };
@@ -200,7 +247,6 @@ function TripsPage() {
     });
   }, []);
 
-  // Redirect prefill params to new trip page
   useEffect(() => {
     if (prefillBinId && !prefillDone.current) {
       prefillDone.current = true;
@@ -211,12 +257,45 @@ function TripsPage() {
     }
   }, [prefillBinId, prefillAction, router]);
 
+  const yardOptions = useMemo(() => {
+    const seen = new Set<string>();
+    for (const t of trips) { const n = tripYardName(t); if (n) seen.add(n); }
+    return [...seen].sort();
+  }, [trips]);
+
+  const vehicleOptions = useMemo(() => {
+    const seen = new Set<string>();
+    for (const t of trips) { if (t.vehicle_number) seen.add(t.vehicle_number); }
+    return [...seen].sort();
+  }, [trips]);
+
+  const customerOptions = useMemo(() => {
+    const seen = new Set<string>();
+    for (const t of trips) { if (t.customers?.name) seen.add(t.customers.name); }
+    return [...seen].sort();
+  }, [trips]);
+
+  const hasActiveFilters = !!(dateFilter || typeFilter || yardFilter || driverFilter || vehicleFilter || customerFilter);
+
+  const clearFilters = () => {
+    setDateFilter(''); setTypeFilter(''); setYardFilter('');
+    setDriverFilter(''); setVehicleFilter(''); setCustomerFilter('');
+  };
+
+  const openCount = trips.filter(t => t.status === 'open').length;
+  const completedCount = trips.filter(t => t.status === 'completed').length;
+
   const canReorder = !!driverFilter && !!dateFilter;
 
   const filteredTrips = trips
     .filter(t => {
-      if (driverFilter && t.driver_id !== driverFilter) return false;
+      if (statusFilter !== 'all' && t.status !== statusFilter) return false;
       if (dateFilter && (t.trip_date ?? t.created_at).slice(0, 10) !== dateFilter) return false;
+      if (!match(tripTypeLabel(t), typeFilter)) return false;
+      if (!match(tripYardName(t), yardFilter)) return false;
+      if (!match(drivers.find(d => d.employee_id === t.driver_id)?.name ?? '', driverFilter)) return false;
+      if (!match(t.vehicle_number ?? '', vehicleFilter)) return false;
+      if (!match(t.customers?.name ?? '', customerFilter)) return false;
       return true;
     })
     .sort((a, b) => {
@@ -343,40 +422,171 @@ function TripsPage() {
         </button>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap items-end gap-3 mb-5">
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Driver</label>
-          <select
-            value={driverFilter}
-            onChange={e => setDriverFilter(e.target.value)}
-            className="border rounded px-3 py-2 text-sm min-w-[180px]"
+      {/* Status tabs */}
+      <div className="flex gap-2 mb-5">
+        {(['all', 'open', 'completed'] as const).map(f => (
+          <button
+            key={f}
+            onClick={() => setStatusFilter(f)}
+            className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-colors ${
+              statusFilter === f ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
           >
-            <option value="">All drivers</option>
-            {drivers.map(d => <option key={d.employee_id} value={d.employee_id}>{d.name}</option>)}
-          </select>
-        </div>
+            {f === 'open' ? `Open (${openCount})` : f === 'completed' ? `Completed (${completedCount})` : `All (${trips.length})`}
+          </button>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div className="mb-5 grid grid-cols-2 sm:grid-cols-3 gap-3">
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Date</label>
           <input
             type="date"
             value={dateFilter}
             onChange={e => setDateFilter(e.target.value)}
-            className="border rounded px-3 py-2 text-sm"
+            className={inputCls}
           />
         </div>
-        {(driverFilter || dateFilter) && (
-          <button
-            onClick={() => { setDriverFilter(''); setDateFilter(''); }}
-            className="text-sm text-gray-400 hover:text-gray-600 pb-2"
-          >
-            Clear
-          </button>
-        )}
-        {canReorder && (
-          <span className="text-xs text-blue-600 font-medium pb-2.5">
-            ↕ Drag rows to set trip sequence
-          </span>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Type</label>
+          <div className="relative">
+            <input
+              value={typeFilter}
+              onChange={e => { setTypeFilter(e.target.value); setShowType(true); }}
+              onFocus={() => setShowType(true)}
+              onBlur={() => setTimeout(() => setShowType(false), 150)}
+              placeholder="All types"
+              className={inputCls}
+            />
+            {showType && (
+              <div className={dropdownCls}>
+                {TYPE_OPTIONS.filter(o => match(o, typeFilter)).map(o => (
+                  <button key={o} type="button" onMouseDown={() => { setTypeFilter(o); setShowType(false); }} className={dropdownItemCls}>
+                    {o}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Yard</label>
+          <div className="relative">
+            <input
+              value={yardFilter}
+              onChange={e => { setYardFilter(e.target.value); setShowYard(true); }}
+              onFocus={() => setShowYard(true)}
+              onBlur={() => setTimeout(() => setShowYard(false), 150)}
+              placeholder="All yards"
+              className={inputCls}
+            />
+            {showYard && (
+              <div className={dropdownCls}>
+                {yardOptions.filter(y => match(y, yardFilter)).map(y => (
+                  <button key={y} type="button" onMouseDown={() => { setYardFilter(y); setShowYard(false); }} className={dropdownItemCls}>
+                    {y}
+                  </button>
+                ))}
+                {yardOptions.filter(y => match(y, yardFilter)).length === 0 && (
+                  <p className="px-3 py-2 text-sm text-gray-400">No yards found</p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Driver</label>
+          <div className="relative">
+            <input
+              value={driverFilter}
+              onChange={e => { setDriverFilter(e.target.value); setShowDriver(true); }}
+              onFocus={() => setShowDriver(true)}
+              onBlur={() => setTimeout(() => setShowDriver(false), 150)}
+              placeholder="All drivers"
+              className={inputCls}
+            />
+            {showDriver && (
+              <div className={dropdownCls}>
+                {drivers.filter(d => match(d.name, driverFilter)).map(d => (
+                  <button key={d.employee_id} type="button" onMouseDown={() => { setDriverFilter(d.name); setShowDriver(false); }} className={dropdownItemCls}>
+                    {d.name}
+                  </button>
+                ))}
+                {drivers.filter(d => match(d.name, driverFilter)).length === 0 && (
+                  <p className="px-3 py-2 text-sm text-gray-400">No drivers found</p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Vehicle</label>
+          <div className="relative">
+            <input
+              value={vehicleFilter}
+              onChange={e => { setVehicleFilter(e.target.value); setShowVehicle(true); }}
+              onFocus={() => setShowVehicle(true)}
+              onBlur={() => setTimeout(() => setShowVehicle(false), 150)}
+              placeholder="All vehicles"
+              className={inputCls}
+            />
+            {showVehicle && (
+              <div className={dropdownCls}>
+                {vehicleOptions.filter(v => match(v, vehicleFilter)).map(v => (
+                  <button key={v} type="button" onMouseDown={() => { setVehicleFilter(v); setShowVehicle(false); }} className={dropdownItemCls}>
+                    {v}
+                  </button>
+                ))}
+                {vehicleOptions.filter(v => match(v, vehicleFilter)).length === 0 && (
+                  <p className="px-3 py-2 text-sm text-gray-400">No vehicles found</p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Customer</label>
+          <div className="relative">
+            <input
+              value={customerFilter}
+              onChange={e => { setCustomerFilter(e.target.value); setShowCustomer(true); }}
+              onFocus={() => setShowCustomer(true)}
+              onBlur={() => setTimeout(() => setShowCustomer(false), 150)}
+              placeholder="All customers"
+              className={inputCls}
+            />
+            {showCustomer && (
+              <div className={dropdownCls}>
+                {customerOptions.filter(c => match(c, customerFilter)).map(c => (
+                  <button key={c} type="button" onMouseDown={() => { setCustomerFilter(c); setShowCustomer(false); }} className={dropdownItemCls}>
+                    {c}
+                  </button>
+                ))}
+                {customerOptions.filter(c => match(c, customerFilter)).length === 0 && (
+                  <p className="px-3 py-2 text-sm text-gray-400">No customers found</p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {(hasActiveFilters || canReorder) && (
+          <div className="col-span-2 sm:col-span-3 flex items-center gap-4">
+            {hasActiveFilters && (
+              <button onClick={clearFilters} className="text-sm text-gray-400 hover:text-gray-600">
+                Clear filters
+              </button>
+            )}
+            {canReorder && (
+              <span className="text-xs text-blue-600 font-medium">↕ Drag rows to set trip sequence</span>
+            )}
+          </div>
         )}
       </div>
 
